@@ -19,9 +19,19 @@ from .base import Rig
 log = logging.getLogger("kenwood")
 
 
-def nearest(values: list[int], target: float) -> int:
-    """Index of the value closest to target."""
-    return min(range(len(values)), key=lambda i: abs(values[i] - target))
+def nearest(values: list[int], target: float, direction: int = 0) -> int:
+    """Index of the value closest to target. direction > 0: prefer the next value up,
+    < 0: the next value down (so a knob turned in small steps can pass coarse rig steps)."""
+    idx = range(len(values))
+    if direction > 0:
+        up = [i for i in idx if values[i] >= target]
+        if up:
+            return min(up, key=lambda i: values[i])
+    elif direction < 0:
+        down = [i for i in idx if values[i] <= target]
+        if down:
+            return max(down, key=lambda i: values[i])
+    return min(idx, key=lambda i: abs(values[i] - target))
 
 
 class KenwoodRig(Rig):
@@ -41,6 +51,7 @@ class KenwoodRig(Rig):
         self.meter_max = float(profile.get("meters", {}).get("max", 30))
         self.meters: dict[str, Any] = {}
         self.frames_rx = 0
+        self._last_bw_req: float | None = None
 
     # ------------------------------------------------------------------ lifecycle
     async def open(self) -> None:
@@ -113,11 +124,15 @@ class KenwoodRig(Rig):
             return ["FR0;", "FT1;"] if value else ["FT0;"]
         if key == "filter_bw":
             mode = st.get("mode")
+            want = float(value)
+            prev = self._last_bw_req
+            self._last_bw_req = want
+            direction = 0 if prev is None else (1 if want > prev else -1 if want < prev else 0)
             if mode in self.profile.get("cw_modes", []):
                 steps = self.filter["fw_steps"]
-                return ["FW%04d;" % steps[nearest(steps, float(value))]]
+                return ["FW%04d;" % steps[nearest(steps, want, direction)]]
             if mode in ("USB", "LSB", "FM"):
-                lo_idx, hi_idx = self.ssb_pair(float(value))
+                lo_idx, hi_idx = self.ssb_pair(want, direction)
                 out = []
                 if st.get("sl_index") != lo_idx:
                     out.append("SL%02d;" % lo_idx)
@@ -160,9 +175,15 @@ class KenwoodRig(Rig):
                 v = int(self.profile["on_levels"][key])
         return [spec["set"].format(v=v)]
 
-    def ssb_pair(self, bandwidth: float) -> tuple[int, int]:
-        """(SL index, SH index) whose width best matches ``bandwidth``, centred near ssb_center."""
+    def ssb_pair(self, bandwidth: float, direction: int = 0) -> tuple[int, int]:
+        """(SL index, SH index) for a wanted SSB bandwidth: from ssb_table if the profile has one,
+        otherwise the pair whose width best matches, centred near ssb_center."""
         sl, sh = self.filter["sl"], self.filter["sh"]
+        table = self.filter.get("ssb_table")
+        if table:
+            widths = [row[0] for row in table]
+            row = table[nearest(widths, bandwidth, direction)]
+            return sl.index(row[1]), sh.index(row[2])
         centre = float(self.filter.get("ssb_center", 1650))
         weight = float(self.filter.get("ssb_center_weight", 0.5))
         best, best_cost = (0, len(sh) - 1), None

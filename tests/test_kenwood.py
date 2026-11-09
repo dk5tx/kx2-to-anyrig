@@ -123,3 +123,16 @@ def test_open_selects_vfo_a_simplex():
             assert sim.received.index("FR0") < sim.received.index("FA")
             await rig.close()
     run(body())
+
+
+def test_ssb_table_and_knob_direction():
+    rig = KenwoodRig(PROFILE, "/dev/null")
+    sl, sh = PROFILE["filter"]["sl"], PROFILE["filter"]["sh"]
+    lo, hi = rig.ssb_pair(2200)
+    assert (sl[lo], sh[hi]) == (400, 2600)                     # author's preference
+    for row in PROFILE["filter"]["ssb_table"]:                  # every row uses valid SL/SH values
+        assert row[1] in sl and row[2] in sh
+    rig.state.update({"mode": "CW"}, "rig")
+    assert rig._encode("filter_bw", 300) == ["FW0300;"]
+    assert rig._encode("filter_bw", 350) == ["FW0400;"]         # turned up: next step up
+    assert rig._encode("filter_bw", 330) == ["FW0300;"]         # turned down: next step down
