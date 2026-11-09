@@ -116,15 +116,32 @@ def test_lua_scripts_reach_ts590(tmp_path):
     run(body())
 
 
-def test_apf_key_toggles_beat_cancel(tmp_path):
+def test_apf_key_sets_manual_notch_in_cw(tmp_path):
     async def body():
         with KX2Sim(reply_delay=0.005) as ksim, TS590Sim() as rsim:
             ksim.apf = True                                  # APF already on when we start
             s = await Stack().start(tmp_path, ksim, rsim)
             await asyncio.sleep(2.5)                         # IC is polled slowly (2 s)
-            assert rsim.raw["BC"] == "0"                     # first reading is not a key press
+            assert rsim.raw["NT"] == "00"                    # first reading is not a key press
             ksim.set_apf(False)
-            assert await wait_for(lambda: rsim.raw["BC"] == "1", 3.0)
+            assert await wait_for(lambda: s.state.get("apf") is False, 3.0)
+            ksim.set_apf(True)
+            assert await wait_for(lambda: rsim.raw["NT"] == "20", 3.0)
+            ksim.set_apf(False)
+            assert await wait_for(lambda: rsim.raw["NT"] == "00", 3.0)
+            await s.stop()
+    run(body())
+
+
+def test_kx2_notch_in_ssb_sets_auto_notch(tmp_path):
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim() as rsim:
+            ksim.raw["MD"] = "2"
+            rsim.raw["MD"] = "2"
+            s = await Stack().start(tmp_path, ksim, rsim)
+            await asyncio.sleep(0.8)                         # DS (normal priority) read once
+            ksim.notch = True
+            assert await wait_for(lambda: rsim.raw["NT"] == "10", 2.0)
             await s.stop()
     run(body())
 

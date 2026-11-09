@@ -34,7 +34,12 @@ LOCAL_DEFAULTS: dict[str, Any] = {
         "block": ["TX", "RX", "PS0", "SR", "KY"],
         "prefix_remote": "@",
     },
-    "kx2_keys": {"apf": "beat_cancel_toggle"},
+    # KX2 functions without a direct counterpart, mapped to a rig function. Only changes count
+    # (not the first reading), and only in the listed KX2 modes.
+    "kx2_keys": {
+        "apf": {"key": "notch", "on": 2, "off": 0, "modes": ["CW", "CW-R"]},     # manual notch
+        "notch": {"key": "notch", "on": 1, "off": 0, "modes": ["USB", "LSB"]},   # auto notch
+    },
     "audio": {"port": 7356, "jitter_ms": 40, "sink": "default", "af_curve": "log"},
     "webui": {"host": "127.0.0.1", "port": 8073},
     "log": {"level": "INFO", "file": None},

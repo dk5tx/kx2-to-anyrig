@@ -50,7 +50,9 @@ python3 -m anyrig.local --remote <shack-ip>         # instead of --local-only
 Then turn the KX2 VFO, change filter, ATT, preamp, NB, NR, AGC, RIT … – the TS-590SG follows.
 A spot click in Win-Test QSYs both rigs at once. Win-Test Lua scripts (TS-590SG variants) go
 straight to the TS-590SG; `KS` from scripts is ignored, `TX`/`RX`/`PS0`/`SR`/`KY` are blocked.
-The KX2 APF key (CW) toggles beat cancel (`kx2_keys.apf` in the config).
+The KX2 APF key (CW) switches the TS-590SG manual notch, the KX2 notch key (SSB) its auto notch
+(`kx2_keys` in the config). In SSB the KX2 bandwidth becomes a low-cut/high-cut pair on the
+TS-590SG centred near 1650 Hz (e.g. 2700 Hz → 300/3000 Hz, 2400 Hz → 400/2800 Hz).
 
 Safety: if the laptop or the network goes away, anyrig-remote unkeys the rig within 1 s.
 

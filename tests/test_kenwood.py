@@ -56,8 +56,12 @@ def test_encode_rules():
     assert rig._encode("mode", "DATA") == ["MD2;", "DA1;"]
     assert rig._encode("split", True) == ["FR0;", "FT1;"]
     assert rig._encode("mode_b", "CW") == ["FR1;", "MD3;", "FR0;"]
-    rig.state.update({"mode": "USB", "sl_index": 2}, "rig")
-    assert rig._encode("filter_bw", 2300) == ["SH07;"]          # low cut 100 Hz + 2300 = 2400 Hz high cut
+    rig.state.update({"mode": "USB", "sl_index": 2, "sh_index": 7}, "rig")
+    # SSB: bandwidth -> low/high pair centred near 1650 Hz (author's examples)
+    assert rig._encode("filter_bw", 2700) == ["SL04;", "SH10;"]   # 300 / 3000
+    assert rig._encode("filter_bw", 2400) == ["SL05;", "SH09;"]   # 400 / 2800
+    rig.state.update({"sl_index": 5, "sh_index": 9}, "rig")
+    assert rig._encode("filter_bw", 2400) == []                     # already there
     assert rig._encode("filter_center", 600) is None           # IS only in CW
     assert rig._encode("cw_tune", True) is None                # read-only key
     assert nearest([50, 80, 100], 90) in (1, 2)
@@ -97,6 +101,15 @@ def test_meters_unsolicited_and_tx(tmp_path):
             assert await wait_for(lambda: rig.state.get("tx") is False, 3.0)
             await rig.close()
     run(body())
+
+
+def test_ssb_pairs():
+    rig = KenwoodRig(PROFILE, "/dev/null")
+    sl, sh = PROFILE["filter"]["sl"], PROFILE["filter"]["sh"]
+    for bw in (3000, 2700, 2600, 2400, 2100, 1800, 1500):
+        lo, hi = rig.ssb_pair(bw)
+        assert abs((sh[hi] - sl[lo]) - bw) <= 100, (bw, sl[lo], sh[hi])
+        assert abs((sh[hi] + sl[lo]) / 2 - 1650) <= 200
 
 
 def test_open_selects_vfo_a_simplex():

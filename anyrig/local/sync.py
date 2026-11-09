@@ -31,7 +31,7 @@ class Sync:
         self.meters: dict[str, Any] = {}
         self.remote_info: dict[str, Any] = {}
         self.sent = 0
-        self._apf_known = False
+        self._known: set[str] = set()
         state.subscribe(self._on_local_change)
 
     # ------------------------------------------------------------------ local -> remote
@@ -41,15 +41,25 @@ class Sync:
         if key in MIRROR_KEYS:
             if self.link.send({"t": "set", "k": key, "v": value}):
                 self.sent += 1
-        elif key == "apf" and source == "kx2":
-            # the KX2 APF key (CW) triggers a configurable function on the remote rig.
-            # The first reading after start is not a key press (measured: caused BC1 at start).
-            if not self._apf_known:
-                self._apf_known = True
-                return
-            action = self.kx2_keys.get("apf")
-            if action and self.state.get("mode") in ("CW", "CW-R"):
-                self.link.send({"t": "action", "a": action})
+        elif key in self.kx2_keys and source == "kx2" and value is not None:
+            self._kx2_key(key, value)
+
+    def _kx2_key(self, key: str, value: Any) -> None:
+        """KX2 function without a direct counterpart (APF, notch) -> configured rig function."""
+        if key not in self._known:            # first reading after start is not a key press
+            self._known.add(key)
+            return
+        spec = self.kx2_keys[key]
+        if not spec:                           # key mapping switched off in the config
+            return
+        if isinstance(spec, str):              # plain action name, e.g. "beat_cancel_toggle"
+            if value:
+                self.link.send({"t": "action", "a": spec})
+            return
+        modes = spec.get("modes")
+        if modes and self.state.get("mode") not in modes:
+            return
+        self.link.send({"t": "set", "k": spec["key"], "v": spec["on"] if value else spec["off"]})
 
     def send_raw(self, cmd: str) -> None:
         if not self.link.send({"t": "raw", "d": cmd}):

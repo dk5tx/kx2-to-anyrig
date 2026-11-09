@@ -57,6 +57,11 @@ filter:
   sh: [1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3400, 4000, 5000]
   sl: [0, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
   sl_default: 2               # used if the current low cut is unknown (100 Hz)
+  # SSB: a bandwidth from the control head is turned into a low-cut/high-cut pair.
+  # Chosen: the pair whose width is closest to the wanted one, preferring a passband centre near
+  # ssb_center (e.g. 2700 Hz -> 300/3000, 2400 Hz -> 400/2800).
+  ssb_center: 1650
+  ssb_center_weight: 0.5
   is_range: [300, 1000]
   is_step: 50
 
@@ -66,7 +71,10 @@ rit:
 meters:
   max: 30                     # SM / RM values are 0..30
 
+# notch: 0 off, 1 auto (SSB only), 2 manual (SSB and CW); set as NT<P1>0
 actions:
-  beat_cancel_toggle: {key: beat_cancel, values: [0, 1]}
-  notch_toggle:       {key: notch, values: [0, 1]}
-  nr_toggle:          {key: nr, values: [0, 1]}
+  beat_cancel_toggle:   {key: beat_cancel, values: [0, 1]}
+  notch_toggle:         {key: notch, values: [0, 1]}
+  notch_auto_toggle:    {key: notch, values: [0, 1]}
+  notch_manual_toggle:  {key: notch, values: [0, 2]}
+  nr_toggle:            {key: nr, values: [0, 1]}

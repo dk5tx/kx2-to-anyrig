@@ -117,11 +117,13 @@ class KenwoodRig(Rig):
                 steps = self.filter["fw_steps"]
                 return ["FW%04d;" % steps[nearest(steps, float(value))]]
             if mode in ("USB", "LSB", "FM"):
-                sl = self.filter["sl"]
-                sh = self.filter["sh"]
-                lo_idx = st.get("sl_index", self.filter.get("sl_default", 2))
-                hi_idx = nearest(sh, sl[lo_idx] + float(value))
-                return ["SH%02d;" % hi_idx]
+                lo_idx, hi_idx = self.ssb_pair(float(value))
+                out = []
+                if st.get("sl_index") != lo_idx:
+                    out.append("SL%02d;" % lo_idx)
+                if st.get("sh_index") != hi_idx:
+                    out.append("SH%02d;" % hi_idx)
+                return out
             return None
         if key == "filter_center":
             if st.get("mode") not in self.profile.get("cw_modes", []):
@@ -157,6 +159,21 @@ class KenwoodRig(Rig):
             if key in self.profile.get("on_levels", {}) and v == 1:
                 v = int(self.profile["on_levels"][key])
         return [spec["set"].format(v=v)]
+
+    def ssb_pair(self, bandwidth: float) -> tuple[int, int]:
+        """(SL index, SH index) whose width best matches ``bandwidth``, centred near ssb_center."""
+        sl, sh = self.filter["sl"], self.filter["sh"]
+        centre = float(self.filter.get("ssb_center", 1650))
+        weight = float(self.filter.get("ssb_center_weight", 0.5))
+        best, best_cost = (0, len(sh) - 1), None
+        for i, lo in enumerate(sl):
+            for j, hi in enumerate(sh):
+                if hi <= lo:
+                    continue
+                cost = abs((hi - lo) - bandwidth) + weight * abs((hi + lo) / 2.0 - centre)
+                if best_cost is None or cost < best_cost:
+                    best, best_cost = (i, j), cost
+        return best
 
     def _mode_cmds(self, mode: str) -> list[str] | None:
         data_modes = self.profile.get("data_modes", {})
