@@ -245,6 +245,11 @@ transmits!, key "ä" in Win-Test), CA1, RC, KS0nn.
 - Suppress reverse sync of MD/FA/filter **while `tx` or `atu_tuning`** is true; after it ends, resync once.
 - After `cw_tune` ends (`CA0`), push final freq_a / rit_offset to KX2.
 - Only **changes** are mirrored, but on (re)connect a full state sync runs: rig is master (rig → KX2).
+- Implemented (M3, `local/sync.py`): remote sends `snapshot_done` after the state dump; forwarding starts
+  only then. The **first reading of every KX2 value is never forwarded** – it is compared with the rig and
+  the rig value is written to the KX2. Unknown KX2 values are never written (NR toggle needs a known state).
+  After a reverse mode change or a frequency jump > 100 kHz, KX2 changes are not forwarded for 1.5 s
+  (KX2 band/mode memory recall) and a resync follows. Hold-offs: freq/RIT 0.5 s, filter 1.5 s, others 0.4 s.
 
 ### 4.9 Value mapping KX2 ↔ TS-590SG (via profile)
 | Function | KX2 | TS-590SG | Note |

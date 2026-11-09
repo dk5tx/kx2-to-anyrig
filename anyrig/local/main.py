@@ -35,8 +35,9 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     sync: Sync | None = None
     if cfg["router"]["default"] != "kx2" and cfg["remote"].get("host"):
         link = RemoteLink(cfg["remote"]["host"], cfg["remote"]["port"])
-        sync = Sync(state, link, cfg.get("kx2_keys"))
+        sync = Sync(state, link, cfg.get("kx2_keys"), kx2=kx2)
         link.on_message = sync.on_message
+        link.on_disconnect = sync.on_disconnect
     elif cfg["router"]["default"] != "kx2":
         log.warning("no remote.host configured – commands for the remote rig are dropped "
                     "(use --local-only or set remote.host)")

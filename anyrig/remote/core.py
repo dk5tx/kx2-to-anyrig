@@ -66,6 +66,7 @@ class RemoteServer:
                    "rig": self.rig.profile.get("name"), "caps": sorted(self.rig.capabilities())})
         for k, v in list(self.rig.state.items()):
             conn.send({"t": "state", "k": k, "v": v, "src": "rig"})
+        conn.send({"t": "snapshot_done"})
         try:
             async for msg in conn.messages():
                 self.handle(msg, conn)

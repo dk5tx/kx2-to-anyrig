@@ -37,16 +37,24 @@ class Stack:
         self.state = State()
         self.kx2 = KX2Link(lcfg["kx2"], self.state)
         self.link = RemoteLink("127.0.0.1", self.server.port)
-        self.sync = Sync(self.state, self.link, lcfg["kx2_keys"])
+        self.sync = Sync(self.state, self.link, lcfg["kx2_keys"], kx2=self.kx2)
         self.link.on_message = self.sync.on_message
+        self.link.on_disconnect = self.sync.on_disconnect
         self.router = Router(lcfg["router"], to_kx2=self.kx2.write, to_remote=self.sync.send_raw)
         self.emu = K3Emulator(str(tmp_path / "com1"), self.state, self.kx2, self.router)
         await self.kx2.start()
         self.emu.start()
         self.link.start()
         assert await self.link.wait_connected(3.0)
-        assert await wait_for(lambda: "freq_a" in self.state)
+        assert await wait_for(lambda: "freq_a" in self.state and self.sync.ready)
         return self
+
+    async def settle(self, timeout=6.0):
+        """Wait until the start-up sync (rig is master) is complete: every mirrored KX2 value has
+        been read once and no quiet period is running."""
+        keys = {"mode", "filter_bw", "preamp", "agc", "nb", "keyer_wpm", "rit_offset"}
+        assert await wait_for(lambda: keys <= self.sync._known
+                              and time.monotonic() > self.sync._quiet_until + 0.1, timeout)
 
     async def stop(self):
         await self.link.stop()
@@ -64,6 +72,7 @@ def test_kx2_vfo_moves_ts590_fast(tmp_path):
     async def body():
         with KX2Sim(reply_delay=0.02) as ksim, TS590Sim() as rsim:
             s = await Stack().start(tmp_path, ksim, rsim)
+            await s.settle()
             for f in (14025100, 14025250, 14025400):
                 t0 = time.monotonic()
                 ksim.knob("FA", "%011d" % f)
@@ -83,6 +92,7 @@ def test_spot_click_qsys_both_rigs(tmp_path):
     async def body():
         with KX2Sim(reply_delay=0.02) as ksim, TS590Sim() as rsim:
             s = await Stack().start(tmp_path, ksim, rsim)
+            await s.settle()
             ksim.knob("MD", "2")
             assert await wait_for(lambda: rsim.raw["MD"] == "2", 1.5)
             wt = WinTest(str(tmp_path / "com1"))

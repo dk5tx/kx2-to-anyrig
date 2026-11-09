@@ -3,7 +3,7 @@
 Use an **Elecraft KX2** as the local control head for your transceiver at home –
 for remote contesting with Win-Test (CW first).
 
-> Status: **in development.** Milestone M2 (KX2 controls the TS-590SG) is ready for testing.
+> Status: **in development.** Milestone M3 (two-way sync KX2 ↔ TS-590SG) is ready for testing.
 > The measurement tools in `tools/` work today.
 
 ## Trying milestone M1 (local only, no remote rig yet)
@@ -56,8 +56,19 @@ TS-590SG centred near 1650 Hz (e.g. 2700 Hz → 300/3000 Hz, 2400 Hz → 400/280
 
 Safety: if the laptop or the network goes away, anyrig-remote unkeys the rig within 1 s.
 
-Known limits of M2: the rig does not yet follow back to the KX2 (M3). At start the TS-590SG takes
-over the KX2's settings. No CW macros (M4) and no audio (M5) yet.
+### Milestone M3: the KX2 follows the rig (two-way sync)
+
+- Changes made at the TS-590SG or by Win-Test scripts (filter, ATT, preamp, RX antenna, CW tune,
+  RIT clear, UP/DN …) appear on the KX2 and in Win-Test.
+- On connect the rig is master: the KX2 is set to the rig's values, nothing on the rig changes.
+- No ping-pong: echoes of your own KX2 changes are ignored; when you stop turning, the KX2 snaps
+  to the value the rig really uses (e.g. a filter step).
+- During TX, ATU tuning (the TS-590SG briefly switches to CW) and CW tune nothing is mirrored;
+  afterwards the KX2 gets the final values (e.g. the zero-beat frequency after CW tune).
+- After a band or mode change at the rig, the KX2's own band/mode memories do not overwrite the rig.
+- NR is switched on the KX2 with a held PRE key (`SWH19`), the KX2 has no NR command.
+
+Not yet: CW macros (M4), audio (M5), web UI (M6).
 
 ## Idea
 

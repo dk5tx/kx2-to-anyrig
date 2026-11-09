@@ -18,11 +18,13 @@ PING_INTERVAL = 0.2
 class RemoteLink:
     def __init__(self, host: str, port: int,
                  on_message: Callable[[dict], None] | None = None,
-                 on_connect: Callable[[], None] | None = None):
+                 on_connect: Callable[[], None] | None = None,
+                 on_disconnect: Callable[[], None] | None = None):
         self.host = host
         self.port = int(port)
         self.on_message = on_message
         self.on_connect = on_connect
+        self.on_disconnect = on_disconnect
         self.conn: Connection | None = None
         self.rtt_ms: float | None = None
         self._task: asyncio.Task | None = None
@@ -91,6 +93,8 @@ class RemoteLink:
                 pinger.cancel()
                 self._connected.clear()
                 self.conn = None
+                if self.on_disconnect:
+                    self.on_disconnect()
                 log.warning("remote connection lost – reconnecting")
 
     async def _ping(self, conn: Connection) -> None:
