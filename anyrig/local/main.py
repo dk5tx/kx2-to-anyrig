@@ -20,7 +20,9 @@ from ..common.log import TrafficLog
 from ..common.state import State
 from .k3emu import K3Emulator
 from .kx2 import KX2Link
+from .link import RemoteLink
 from .router import Router
+from .sync import Sync
 
 log = logging.getLogger("kx2-local")
 
@@ -29,7 +31,17 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     state = State()
     traffic = TrafficLog(cfg["wintest"].get("traffic_log") or None)
     kx2 = KX2Link(cfg["kx2"], state, traffic)
-    router = Router(cfg["router"], to_kx2=kx2.write, to_remote=None, traffic=traffic)
+    link: RemoteLink | None = None
+    sync: Sync | None = None
+    if cfg["router"]["default"] != "kx2" and cfg["remote"].get("host"):
+        link = RemoteLink(cfg["remote"]["host"], cfg["remote"]["port"])
+        sync = Sync(state, link, cfg.get("kx2_keys"))
+        link.on_message = sync.on_message
+    elif cfg["router"]["default"] != "kx2":
+        log.warning("no remote.host configured – commands for the remote rig are dropped "
+                    "(use --local-only or set remote.host)")
+    router = Router(cfg["router"], to_kx2=kx2.write, to_remote=sync.send_raw if sync else None,
+                    traffic=traffic)
     emu = K3Emulator(cfg["wintest"]["cat_pty_link"], state, kx2, router, traffic)
 
     stop = stop or asyncio.Event()
@@ -47,12 +59,17 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
         traffic.close()
         raise SystemExit(1)
     emu.start()
+    if link:
+        link.start()
+        log.info("connecting to remote %s:%s", cfg["remote"]["host"], cfg["remote"]["port"])
     check_wine_com(cfg["wintest"]["cat_pty_link"], "COM1")
     log.info("kx2-local %s running (router default: %s). Ctrl+C to stop.", __version__, router.default)
     _warn_kx2(state)
     try:
         await stop.wait()
     finally:
+        if link:
+            await link.stop()
         await emu.stop()
         await kx2.stop()
         traffic.close()
@@ -92,6 +109,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--local-only", action="store_true",
                     help="no remote: route all Win-Test commands to the KX2 (test/M1 mode)")
     ap.add_argument("--kx2-port", help="override kx2.port")
+    ap.add_argument("--remote", help="remote host[:port], overrides remote.host/port")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args(argv)
 
@@ -100,6 +118,11 @@ def main(argv: list[str] | None = None) -> None:
         cfg["router"]["default"] = "kx2"
     if args.kx2_port:
         cfg["kx2"]["port"] = args.kx2_port
+    if args.remote:
+        host, _, port = args.remote.partition(":")
+        cfg["remote"]["host"] = host
+        if port:
+            cfg["remote"]["port"] = int(port)
     logsetup.setup("DEBUG" if args.debug else cfg["log"]["level"], cfg["log"].get("file"))
 
     asyncio.run(run(cfg))

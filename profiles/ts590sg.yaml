@@ -1,0 +1,70 @@
+# Kenwood TS-590SG model profile for the kenwood driver.
+# Source: PC Control Command Reference B5A-0316-00 and measurements (docs/measurements.md).
+# A new Kenwood-style model should only need a new profile like this one.
+
+name: Kenwood TS-590SG
+driver: kenwood
+baud: 115200
+
+# sent once after opening the port (AI2 = auto information without backup)
+init: ["AI2;"]
+# restored / sent on close (safety first)
+shutdown: ["KY0;", "AI0;"]
+# queried once after init to build the state (mode-dependent ones may answer '?', that is fine)
+initial_queries: [FA, FB, FR, FT, MD, DA, IF, RA, PA, NB, NR, NT, BC, GC, KS, SD, PC, VX, AC, FW, IS, SH, SL, RG, AN, FL]
+# frames to ignore (undocumented quick-menu indicator)
+ignore: [RS, EX, UR, XI, FS, PR, EM]
+
+modes: {"1": LSB, "2": USB, "3": CW, "4": FM, "5": AM, "6": FSK, "7": CW-R, "9": FSK-R}
+# normalized DATA modes -> (rig mode, DA value)
+data_modes: {DATA: USB, DATA-R: LSB}
+cw_modes: [CW, CW-R, FSK, FSK-R]
+
+# simple commands: key -> how to parse the rig's answer and how to set it
+#   type: int | bool | enum | scale ; slice: [start, end] of the payload ; set: format with {v}
+commands:
+  freq_a:      {cmd: FA, type: int, set: "FA{v:011d};"}
+  freq_b:      {cmd: FB, type: int, set: "FB{v:011d};"}
+  rit:         {cmd: RT, type: bool, set: "RT{v:d};"}
+  xit:         {cmd: XT, type: bool, set: "XT{v:d};"}
+  att:         {cmd: RA, type: int, slice: [0, 2], set: "RA{v:02d};"}
+  preamp:      {cmd: PA, type: int, slice: [0, 1], set: "PA{v:d};"}
+  nb:          {cmd: NB, type: int, set: "NB{v:d};"}
+  nr:          {cmd: NR, type: int, set: "NR{v:d};"}
+  nr_level:    {cmd: RL, type: int, set: "RL{v:02d};"}
+  beat_cancel: {cmd: BC, type: int, set: "BC{v:d};"}
+  notch:       {cmd: NT, type: int, slice: [0, 1], set: "NT{v:d}0;"}
+  agc:         {cmd: GC, type: enum, map: {"0": "off", "1": "slow", "2": "fast"}, set: "GC{v};"}
+  keyer_wpm:   {cmd: KS, type: int, set: "KS{v:03d};"}
+  break_in_delay: {cmd: SD, type: int, set: "SD{v:04d};"}
+  power:       {cmd: PC, type: int, set: "PC{v:03d};"}
+  vox:         {cmd: VX, type: bool, set: "VX{v:d};"}
+  rf_gain:     {cmd: RG, type: scale, max: 255, set: "RG{v:03d};"}
+  data:        {cmd: DA, type: bool, set: "DA{v:d};"}
+  cw_tune:     {cmd: CA, type: bool}
+  antenna:     {cmd: AN, type: raw}
+  filter_slot: {cmd: FL, type: raw}
+
+# what "on" from a simple on/off control head means for multi-level functions
+on_levels: {nb: 1, nr: 1, notch: 1, beat_cancel: 1}
+
+filter:
+  # CW/FSK bandwidth (FW, Hz)
+  fw_steps: [50, 80, 100, 150, 200, 250, 300, 400, 500, 600, 1000, 1500, 2000, 2500]
+  # SSB/FM high cut (SH index -> Hz) and low cut (SL index -> Hz)
+  sh: [1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3400, 4000, 5000]
+  sl: [0, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+  sl_default: 2               # used if the current low cut is unknown (100 Hz)
+  is_range: [300, 1000]
+  is_step: 50
+
+rit:
+  max: 9999                   # RU/RD take 5 digits Hz; IF shows +-9990
+
+meters:
+  max: 30                     # SM / RM values are 0..30
+
+actions:
+  beat_cancel_toggle: {key: beat_cancel, values: [0, 1]}
+  notch_toggle:       {key: notch, values: [0, 1]}
+  nr_toggle:          {key: nr, values: [0, 1]}

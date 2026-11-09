@@ -43,6 +43,7 @@ POLL_TABLE: list[tuple[str, str, Callable[[State], bool] | None]] = [
     ("PC", "slow", None),
     ("IC", "slow", None),            # APF (byte c bit 5), TX TEST
     ("TQ", "slow", None),
+    ("VX", "slow", None),
     ("AP", "slow", lambda s: s.get("mode") in ("CW", "CW-R")),   # answered only in CW
 ]
 
@@ -105,6 +106,11 @@ class KX2Link:
         self.port = SerialPort(self.cfg["port"], int(self.cfg["baud"]))
         self.port.open()
         self._wake = asyncio.Event()
+        # start with every item exactly one interval overdue (score 1): fast items then win
+        # right away instead of waiting until every slow item has been polled once
+        now = time.monotonic()
+        for it in self._items:
+            it.last = now - float(self.intervals.get(it.prio, 2.0))
         self.port.start_reading(self._on_data)
         self._task = asyncio.create_task(self._scheduler(), name="kx2-scheduler")
         self._orig_ai = await self.query("AI;")

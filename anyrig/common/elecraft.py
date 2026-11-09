@@ -108,6 +108,9 @@ def decode(key: str, payload: str, k31: bool = True) -> dict[str, Any]:
     elif key == "TQ":
         if p[:1] in ("0", "1"):
             out["kx2_tx"] = p[:1] == "1"
+    elif key == "VX":
+        if p[:1] in ("0", "1"):
+            out["vox"] = p[:1] == "1"
     elif key == "AP":
         if p[:1] in ("0", "1"):
             out["apf"] = p[:1] == "1"
@@ -227,6 +230,8 @@ def encode_set(key: str, value: Any) -> str | None:
         return "KS%03d;" % max(8, min(int(value), 50))
     if key == "split":
         return "FT%d;" % (1 if value else 0)
+    if key == "vox":
+        return "VX%d;" % (1 if value else 0)
     if key == "rx_vfo":
         return "FR%d;" % (1 if value == "B" else 0)
     return None

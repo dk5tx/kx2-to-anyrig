@@ -3,7 +3,7 @@
 Use an **Elecraft KX2** as the local control head for your transceiver at home –
 for remote contesting with Win-Test (CW first).
 
-> Status: **in development.** Milestone M1 (local KX2 proxy for Win-Test) is ready for testing.
+> Status: **in development.** Milestone M2 (KX2 controls the TS-590SG) is ready for testing.
 > The measurement tools in `tools/` work today.
 
 ## Trying milestone M1 (local only, no remote rig yet)
@@ -34,6 +34,28 @@ wine reg delete 'HKLM\Software\Wine\Ports' /v COM1 /f && wineserver -k
 ```
 Options: `--kx2-port /dev/ttyUSB1`, `--debug`, `-c config/local.yaml` (see `config/local.example.yaml`).
 Tests: `python3 -m pytest -q` (no hardware needed).
+
+## Trying milestone M2 (KX2 controls the home rig)
+
+On the **shack PC** (TS-590SG on `/dev/ttyUSB1`, 115200 Bd):
+```bash
+sudo apt install python3-yaml
+git clone https://github.com/dk5tx/kx2-to-anyrig && cd kx2-to-anyrig
+python3 -m anyrig.remote --traffic-log rig.log      # listens on TCP port 7355
+```
+On the **laptop** (Win-Test closed or open, Wine COM1 set up as for M1):
+```bash
+python3 -m anyrig.local --remote <shack-ip>         # instead of --local-only
+```
+Then turn the KX2 VFO, change filter, ATT, preamp, NB, NR, AGC, RIT … – the TS-590SG follows.
+A spot click in Win-Test QSYs both rigs at once. Win-Test Lua scripts (TS-590SG variants) go
+straight to the TS-590SG; `KS` from scripts is ignored, `TX`/`RX`/`PS0`/`SR`/`KY` are blocked.
+The KX2 APF key (CW) toggles beat cancel (`kx2_keys.apf` in the config).
+
+Safety: if the laptop or the network goes away, anyrig-remote unkeys the rig within 1 s.
+
+Known limits of M2: the rig does not yet follow back to the KX2 (M3). At start the TS-590SG takes
+over the KX2's settings. No CW macros (M4) and no audio (M5) yet.
 
 ## Idea
 

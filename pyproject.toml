@@ -18,6 +18,7 @@ test = ["pytest"]
 
 [project.scripts]
 kx2-local = "anyrig.local.main:main"
+anyrig-remote = "anyrig.remote.main:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "anyrig.__version__"}
