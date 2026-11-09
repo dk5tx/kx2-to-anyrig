@@ -85,8 +85,9 @@ kx2-local pty and the "CW"/"PTT" options on COM1 must be **off** (a pty has no m
 - IF reply format (K3): `IF` f(11) 5×space `+yyyy`(RIT/XIT offset, sign+4) r x space `00` t m v s p b d `1` space `;`
   Example: `IF00014074002     -000000 0002000001 ;` (t = TX, m = mode digit, v = RX VFO, s = **scan**, p = **split**).
 - Lua scripts send arbitrary strings through the same port (`wtRadio:Send("CA1;")`).
-- To capture: spot-to-VFO-B, split, band/mode change, direct frequency entry → still to be captured
-  (milestone M1 logs everything anyway).
+- Captured with kx2-local (M1, 9 Nov 2026) – Win-Test only ever sends these set commands:
+  spot click `FA…;MD3;FT0;` · direct entry (e.g. "14025") `FA…;MD3;` · spot to VFO B `FB…;MD$3;` ·
+  split on with QSX `FB…;FT1;` · split off `FT0;`. **M1 accepted on hardware.**
 
 ### 3.3 TS-590SG (Kenwood, PC Control Command Reference B5A-0316-00)
 - `AI2` reports changes **immediately** (VFO turning ~every 30 ms). Query reply ~2 ms.
