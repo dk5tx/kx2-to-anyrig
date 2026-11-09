@@ -1,0 +1,13 @@
+# anyrig-remote configuration (shack PC with the home rig). Used from milestone M2 on.
+# Copy to config/remote.yaml and adjust.
+
+listen: {host: 0.0.0.0, port: 7355}
+rig:
+  profile: profiles/ts590sg.yaml
+  port: /dev/ttyUSB1
+  baud: 115200
+cw: {method: cat}                       # cat (KY) | dtr (PC generates timing)
+keyline: {port: /dev/ttyUSB0, key: dtr, ptt: rts}
+audio: {source: "hw:CARD=CODEC", port: 7356, bitrate: 48000, frame_ms: 10}
+safety: {link_timeout_ms: 1000, tx_timeout_s: 60, max_power_w: 100}
+log: {level: INFO, file: null}

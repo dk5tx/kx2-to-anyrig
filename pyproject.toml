@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kx2-to-anyrig"
+dynamic = ["version"]
+description = "Use an Elecraft KX2 as local control head for a remote transceiver (remote contesting with Win-Test)"
+readme = "README.md"
+license = {text = "GPL-3.0-or-later"}
+authors = [{name = "DK5TX"}]
+requires-python = ">=3.10"
+dependencies = ["PyYAML"]
+
+[project.optional-dependencies]
+webui = ["aiohttp"]
+test = ["pytest"]
+
+[project.scripts]
+kx2-local = "anyrig.local.main:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "anyrig.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["anyrig*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

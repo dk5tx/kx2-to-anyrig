@@ -1,0 +1,34 @@
+# kx2-local configuration (laptop with the KX2 and Win-Test).
+# Copy to config/local.yaml and adjust. Missing keys use the built-in defaults.
+
+remote:
+  host: 192.168.178.50          # shack PC; leave empty for local-only mode
+  port: 7355
+
+kx2:
+  port: /dev/ttyUSB0
+  baud: 38400
+  k31: true                     # extended mode: NR/notch/CWT become visible
+
+wintest:
+  cat_pty_link: /tmp/anyrig-com1      # link ~/.wine/dosdevices/com1 to this
+  winkeyer_pty_link: /tmp/anyrig-com2 # link ~/.wine/dosdevices/com2 to this (milestone M4)
+  traffic_log: anyrig-wintest.log     # every frame from/to Win-Test; empty = off
+
+router:
+  # where Win-Test commands go that the K3 emulation does not handle itself:
+  #   remote = to the home rig (normal remote operation, TS-590SG Lua scripts)
+  #   kx2    = to the KX2 (local-only mode, behaves like a directly connected KX2)
+  default: remote
+  ignore: [KS]                  # keyer speed belongs to the WinKeyer emulation
+  to_both: [RC]                 # clear RIT on both rigs
+  translate: {}                 # e.g. {"SWT34;": "CA1;"}
+  block: [TX, RX, PS0, SR, KY]
+  prefix_remote: "@"
+
+kx2_keys:
+  apf: beat_cancel_toggle       # what the KX2 APF key does on the home rig (CW)
+
+audio: {port: 7356, jitter_ms: 40, sink: default, af_curve: log}
+webui: {host: 127.0.0.1, port: 8073}
+log: {level: INFO, file: null}

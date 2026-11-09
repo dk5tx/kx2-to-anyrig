@@ -3,7 +3,29 @@
 Use an **Elecraft KX2** as the local control head for your transceiver at home –
 for remote contesting with Win-Test (CW first).
 
-> Status: **in development.** Nothing to install yet. The measurement tools in `tools/` work today.
+> Status: **in development.** Milestone M1 (local KX2 proxy for Win-Test) is ready for testing.
+> The measurement tools in `tools/` work today.
+
+## Trying milestone M1 (local only, no remote rig yet)
+
+kx2-local sits between Win-Test and the KX2. Win-Test sees an Elecraft K3 on a virtual port;
+kx2-local polls the KX2 with priorities (VFO and AF fast) and answers Win-Test instantly.
+In `--local-only` mode every other command (Lua scripts) goes to the KX2, so Win-Test behaves
+as with a directly connected KX2. Every frame is logged to `anyrig-wintest.log`.
+
+```bash
+sudo apt install python3-yaml            # only dependency for M1
+git clone https://github.com/dk5tx/kx2-to-anyrig && cd kx2-to-anyrig
+# Win-Test must be closed
+python3 -m anyrig.local --local-only     # KX2 on /dev/ttyUSB0, 38400 Bd
+# second terminal: point Wine COM1 to the virtual port
+mv ~/.wine/dosdevices/com1 ~/.wine/dosdevices/com1.orig
+ln -s /tmp/anyrig-com1 ~/.wine/dosdevices/com1
+# start Win-Test (Radio 1 = Elecraft K3 on COM1; switch off "CW"/"PTT" on COM1)
+# afterwards: rm ~/.wine/dosdevices/com1 && mv ~/.wine/dosdevices/com1.orig ~/.wine/dosdevices/com1
+```
+Options: `--kx2-port /dev/ttyUSB1`, `--debug`, `-c config/local.yaml` (see `config/local.example.yaml`).
+Tests: `python3 -m pytest -q` (no hardware needed).
 
 ## Idea
 

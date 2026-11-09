@@ -138,9 +138,10 @@ docs/
 ```
 
 Dependencies (all available as Debian/Mint packages, prefer apt):
-`python3-serial` (pyserial), `python3-yaml`, `python3-aiohttp`, GStreamer
+`python3-yaml`, `python3-aiohttp` (web UI only), GStreamer
 (`gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pipewire`).
 No other runtime dependencies without a good reason. Tests: `python3-pytest`.
+Serial ports and ptys use our own termios wrapper (`anyrig/common/serialport.py`, Linux only) – no pyserial.
 
 ### 4.1 Rig abstraction (remote)
 `drivers/base.py` defines `Rig` with a **normalized state model** and async methods:
