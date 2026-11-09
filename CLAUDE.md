@@ -77,6 +77,8 @@ kx2-local pty and the "CW"/"PTT" options on COM1 must be **off** (a pty has no m
 - XMIT and ATU buttons key the KX2 (TQ=1 ~0.5 s). Run the KX2 in TX TEST / 0 W. Never forward KX2 TX.
 - Auto Spot (CWT) on the KX2 tunes to the *local* signal → must be off (CWT bit visible in K31).
 - `SWT`/`SWH` emulate button taps/holds (KX2 table 8A), e.g. SWT34 = KYR-SPT tap.
+- The KX2 stores frequencies in **10 Hz steps, truncated** (`FA00014014527;` → reads back `14014520`).
+  Such a read-back is rounding, not an operator action (M3 hardware test, 9 Nov 2026).
 
 ### 3.2 Win-Test ↔ "K3" (captured with tools/catsniff.py)
 - Win-Test polls **only** `IF;` and `FB;`, alternating, ~450 ms each (its own pacing, regardless of the
