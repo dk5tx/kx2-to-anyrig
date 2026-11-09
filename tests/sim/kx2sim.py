@@ -17,8 +17,9 @@ NO_AI = {"BW", "NL", "LK"}
 
 
 class KX2Sim(PtySim):
-    def __init__(self, reply_delay: float = 0.0, ai_period: float = 1.0):
+    def __init__(self, reply_delay: float = 0.0, ai_period: float = 1.0, freq_step: int = 10):
         super().__init__(reply_delay)
+        self.freq_step = freq_step          # measured: the KX2 keeps frequencies in 10 Hz steps
         self.ai_period = ai_period
         self.ai = 0
         self.k3 = 0
@@ -110,6 +111,8 @@ class KX2Sim(PtySim):
             self.raw["RO"] = "+0000"
             return
         elif arg and key in self.raw:
+            if key in ("FA", "FB") and arg.isdigit() and self.freq_step > 1:
+                arg = "%011d" % (int(arg) // self.freq_step * self.freq_step)
             self.raw[key] = arg
             return
         elif arg:

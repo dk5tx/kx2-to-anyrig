@@ -165,3 +165,21 @@ def test_reconnect_resyncs_from_rig(tmp_path):
             assert await wait_for(lambda: ksim.raw["FA"] == "00014044000", 2.0)
             await s.stop()
     run(body())
+
+
+def test_kx2_10hz_rounding_is_not_forwarded(tmp_path):
+    """Measured 9 Nov: rig at 14 014 527 Hz (after CW tune); the KX2 stores 14 014 520 and the
+    proxy sent that back to the rig. Rounding below 10 Hz must not count as an operator action."""
+    async def body():
+        with KX2Sim(reply_delay=0.01) as ksim, TS590Sim() as rsim:
+            rsim.raw["FA"] = "00014014527"
+            s = await Stack().start(tmp_path, ksim, rsim)
+            await s.settle()
+            assert ksim.raw["FA"] == "00014014520"          # KX2 rounded
+            await asyncio.sleep(1.0)
+            assert not [f for f in rsim.received if f.startswith("FA0")]   # rig untouched
+            assert s.state.get("freq_a") == 14014527        # Win-Test sees the exact value
+            ksim.knob("FA", "00014014530")                  # a real 10 Hz step is forwarded
+            assert await wait_for(lambda: rsim.raw["FA"] == "00014014530", 1.0)
+            await s.stop()
+    run(body())

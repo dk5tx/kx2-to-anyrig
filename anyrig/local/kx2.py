@@ -50,6 +50,10 @@ POLL_TABLE: list[tuple[str, str, Callable[[State], bool] | None]] = [
 # after writing a value, ignore differing reports for that key for this long [s]
 GUARD_POLL = 0.4
 GUARD_AI = 1.5
+# the KX2 stores frequencies in 10 Hz steps, cutting off the rest (measured: 14 014 527 written,
+# 14 014 520 read back). That truncated value is rounding, not an operator action.
+FREQ_RESOLUTION = 10
+FREQ_KEYS = ("freq_a", "freq_b")
 
 
 @dataclass
@@ -207,6 +211,13 @@ class KX2Link:
 
     def _apply(self, values: dict[str, Any], source: str, now: float) -> None:
         for k, v in values.items():
+            if k in FREQ_KEYS and isinstance(v, int):
+                cur = self.state.get(k)
+                _, cur_src = self.state.last_change(k)
+                if isinstance(cur, int) and cur_src != "kx2" and v != cur \
+                        and v == cur - cur % FREQ_RESOLUTION:
+                    self._guard.pop(k, None)
+                    continue           # KX2 rounding of a rig/Win-Test frequency – keep the exact value
             g = self._guard.get(k)
             if g:
                 wanted, until_poll, until_ai = g
