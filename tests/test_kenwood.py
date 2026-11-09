@@ -97,3 +97,16 @@ def test_meters_unsolicited_and_tx(tmp_path):
             assert await wait_for(lambda: rig.state.get("tx") is False, 3.0)
             await rig.close()
     run(body())
+
+
+def test_open_selects_vfo_a_simplex():
+    async def body():
+        with TS590Sim() as sim:
+            sim.raw["FR"] = "1"                 # measured start state: rig on VFO B
+            sim.raw["FT"] = "1"
+            rig = KenwoodRig(PROFILE, sim.port)
+            await rig.open()
+            assert "FR0" in sim.received
+            assert sim.received.index("FR0") < sim.received.index("FA")
+            await rig.close()
+    run(body())

@@ -119,9 +119,11 @@ def test_lua_scripts_reach_ts590(tmp_path):
 def test_apf_key_toggles_beat_cancel(tmp_path):
     async def body():
         with KX2Sim(reply_delay=0.005) as ksim, TS590Sim() as rsim:
+            ksim.apf = True                                  # APF already on when we start
             s = await Stack().start(tmp_path, ksim, rsim)
-            await asyncio.sleep(0.3)
-            ksim.set_apf(True)
+            await asyncio.sleep(2.5)                         # IC is polled slowly (2 s)
+            assert rsim.raw["BC"] == "0"                     # first reading is not a key press
+            ksim.set_apf(False)
             assert await wait_for(lambda: rsim.raw["BC"] == "1", 3.0)
             await s.stop()
     run(body())

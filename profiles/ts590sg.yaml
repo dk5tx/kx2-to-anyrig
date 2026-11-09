@@ -6,8 +6,10 @@ name: Kenwood TS-590SG
 driver: kenwood
 baud: 115200
 
-# sent once after opening the port (AI2 = auto information without backup)
-init: ["AI2;"]
+# sent once after opening the port (AI2 = auto information without backup).
+# FR0 = receive and transmit on VFO A (simplex): the control-head model is "VFO A receives,
+# VFO B is the split TX VFO". Measured: with FR1 active, FA/MD/FT from the KX2 hit the wrong VFO.
+init: ["AI2;", "FR0;"]
 # restored / sent on close (safety first)
 shutdown: ["KY0;", "AI0;"]
 # queried once after init to build the state (mode-dependent ones may answer '?', that is fine)

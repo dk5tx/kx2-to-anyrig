@@ -31,6 +31,7 @@ class Sync:
         self.meters: dict[str, Any] = {}
         self.remote_info: dict[str, Any] = {}
         self.sent = 0
+        self._apf_known = False
         state.subscribe(self._on_local_change)
 
     # ------------------------------------------------------------------ local -> remote
@@ -41,7 +42,11 @@ class Sync:
             if self.link.send({"t": "set", "k": key, "v": value}):
                 self.sent += 1
         elif key == "apf" and source == "kx2":
-            # the KX2 APF key (CW) triggers a configurable function on the remote rig
+            # the KX2 APF key (CW) triggers a configurable function on the remote rig.
+            # The first reading after start is not a key press (measured: caused BC1 at start).
+            if not self._apf_known:
+                self._apf_known = True
+                return
             action = self.kx2_keys.get("apf")
             if action and self.state.get("mode") in ("CW", "CW-R"):
                 self.link.send({"t": "action", "a": action})
