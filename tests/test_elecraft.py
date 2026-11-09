@@ -35,6 +35,19 @@ def test_build_if_matches_real_frame():
     assert f[2 + 27] == "3" and len(f) == 2 + 35
 
 
+def test_if_split_is_p_not_s():
+    # field order t m v s p b d (Programmer's Reference): s = scan, p = split
+    d = e.decode_if("00007014900     +000000 0003001001 ")
+    assert d["split"] is True and d["rx_vfo"] == "A"
+    d = e.decode_if("00007014900     +000000 0003011001 ")      # scan flag must not mean split
+    assert d["split"] is True
+    d = e.decode_if("00007014900     +000000 0003010001 ")
+    assert d["split"] is False
+    s = State()
+    s.update({"freq_a": 7014900, "mode": "CW", "split": True, "rx_vfo": "A"}, "kx2")
+    assert e.build_if(s, template="00007014900     +000000 0003010001 ")[2:] == "00007014900     +000000 0003001001 "
+
+
 def test_build_if_roundtrip_without_template():
     s = State()
     s.update({"freq_a": 21025000, "mode": "CW-R", "split": True, "rit_offset": 250, "xit": True}, "kx2")

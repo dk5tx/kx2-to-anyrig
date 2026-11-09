@@ -17,8 +17,8 @@ AGC_CODES = {v: k for k, v in AGC.items()}
 IF_TEMPLATE = "00000000000     +000000 0003000001 "
 #              0         1         2         3
 #              0123456789012345678901234567890123 4
-# f 0-10 | spaces 11-15 | offset 16-20 | r 21 | x 22 | space 23 | "00" 24-25 | t 26 | m 27 | v 28 |
-# s 29 | p 30 | b 31 | d 32 | "1" 33 | space 34
+# f 0-10 | spaces 11-15 | offset 16-20 | r 21 | x 22 | space 23 | "00" 24-25 | t 26 (TX) | m 27 (mode) |
+# v 28 (RX VFO, 1 = B) | s 29 (scan) | p 30 (split) | b 31 | d 32 | "1" 33 | space 34
 
 
 def frame_key(frame: str) -> str:
@@ -163,7 +163,8 @@ def decode_if(p: str) -> dict[str, Any]:
     out["kx2_tx"] = p[26] == "1"
     if p[27] in MODES:
         out["mode"] = MODES[p[27]]
-    out["split"] = p[29] == "1"
+    out["rx_vfo"] = "B" if p[28] == "1" else "A"
+    out["split"] = p[30] == "1"          # s (index 29) is 'scan', not split
     return out
 
 
@@ -184,7 +185,9 @@ def build_if(state: dict[str, Any] | Any, template: str | None = None, tx: bool 
     t[22] = "1" if get("xit") else "0"
     t[26] = "1" if tx else "0"
     t[27] = MODE_CODES.get(get("mode", "CW"), "3")
-    t[29] = "1" if get("split") else "0"
+    t[28] = "1" if get("rx_vfo") == "B" else "0"
+    t[29] = "0"                                   # scan: never
+    t[30] = "1" if get("split") else "0"
     return "IF" + "".join(t[:35])
 
 

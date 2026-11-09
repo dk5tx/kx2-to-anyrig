@@ -47,6 +47,7 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
         traffic.close()
         raise SystemExit(1)
     emu.start()
+    check_wine_com(cfg["wintest"]["cat_pty_link"], "COM1")
     log.info("kx2-local %s running (router default: %s). Ctrl+C to stop.", __version__, router.default)
     _warn_kx2(state)
     try:
@@ -56,6 +57,24 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
         await kx2.stop()
         traffic.close()
         log.info("stopped")
+
+
+def wine_com_path(com: str) -> str:
+    prefix = os.environ.get("WINEPREFIX") or os.path.expanduser("~/.wine")
+    return os.path.join(prefix, "dosdevices", com.lower())
+
+
+def check_wine_com(link: str, com: str) -> bool:
+    """Warn if Wine's COM port does not lead to our pty. Returns True if it does."""
+    path = wine_com_path(com)
+    if os.path.realpath(path) == os.path.realpath(link):
+        log.info("Wine %s -> %s: OK", com, link)
+        return True
+    target = os.readlink(path) if os.path.islink(path) else "(missing)"
+    log.warning("Wine %s points to %s, not to %s. Win-Test will not find the K3. Fix once with:\n"
+                "  wine reg add 'HKLM\\Software\\Wine\\Ports' /v %s /t REG_SZ /d %s /f && wineserver -k\n"
+                "then start Win-Test again.", com, target, link, com, link)
+    return False
 
 
 def _warn_kx2(state: State) -> None:
@@ -83,9 +102,6 @@ def main(argv: list[str] | None = None) -> None:
         cfg["kx2"]["port"] = args.kx2_port
     logsetup.setup("DEBUG" if args.debug else cfg["log"]["level"], cfg["log"].get("file"))
 
-    link = cfg["wintest"]["cat_pty_link"]
-    print(f"Point Win-Test COM1 here:  ln -sf {link} {os.path.expanduser('~/.wine/dosdevices/com1')}",
-          file=sys.stderr)
     asyncio.run(run(cfg))
 
 

@@ -16,13 +16,21 @@ as with a directly connected KX2. Every frame is logged to `anyrig-wintest.log`.
 ```bash
 sudo apt install python3-yaml            # only dependency for M1
 git clone https://github.com/dk5tx/kx2-to-anyrig && cd kx2-to-anyrig
-# Win-Test must be closed
-python3 -m anyrig.local --local-only     # KX2 on /dev/ttyUSB0, 38400 Bd
-# second terminal: point Wine COM1 to the virtual port
-mv ~/.wine/dosdevices/com1 ~/.wine/dosdevices/com1.orig
-ln -s /tmp/anyrig-com1 ~/.wine/dosdevices/com1
-# start Win-Test (Radio 1 = Elecraft K3 on COM1; switch off "CW"/"PTT" on COM1)
-# afterwards: rm ~/.wine/dosdevices/com1 && mv ~/.wine/dosdevices/com1.orig ~/.wine/dosdevices/com1
+
+# once: tell Wine that COM1 is the virtual port (Wine recreates plain symlinks itself,
+# so a registry entry is needed – a symlink in dosdevices alone gets replaced)
+wineserver -k
+wine reg add 'HKLM\Software\Wine\Ports' /v COM1 /t REG_SZ /d /tmp/anyrig-com1 /f
+wineserver -k
+
+python3 -m anyrig.local --local-only     # first: KX2 on /dev/ttyUSB0, 38400 Bd
+# then start Win-Test (Radio 1 = Elecraft K3 on COM1; switch off "CW"/"PTT" on COM1)
+```
+kx2-local checks at start whether Wine's COM1 leads to its virtual port and tells you if not.
+
+Back to the KX2 directly on COM1 (without kx2-local):
+```bash
+wine reg delete 'HKLM\Software\Wine\Ports' /v COM1 /f && wineserver -k
 ```
 Options: `--kx2-port /dev/ttyUSB1`, `--debug`, `-c config/local.yaml` (see `config/local.example.yaml`).
 Tests: `python3 -m pytest -q` (no hardware needed).

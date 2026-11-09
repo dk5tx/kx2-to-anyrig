@@ -83,7 +83,7 @@ kx2-local pty and the "CW"/"PTT" options on COM1 must be **off** (a pty has no m
   100 ms setting). No `AI`, no `K31`, no init.
 - Click on cluster spot: `FA00007039800;` `MD3;` `FT0;` back-to-back, no read-back.
 - IF reply format (K3): `IF` f(11) 5×space `+yyyy`(RIT/XIT offset, sign+4) r x space `00` t m v s p b d `1` space `;`
-  Example: `IF00014074002     -000000 0002000001 ;` (t = TX, m = mode digit, s = split).
+  Example: `IF00014074002     -000000 0002000001 ;` (t = TX, m = mode digit, v = RX VFO, s = **scan**, p = **split**).
 - Lua scripts send arbitrary strings through the same port (`wtRadio:Send("CA1;")`).
 - To capture: spot-to-VFO-B, split, band/mode change, direct frequency entry → still to be captured
   (milestone M1 logs everything anyway).

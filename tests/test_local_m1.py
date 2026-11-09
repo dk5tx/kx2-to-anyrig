@@ -179,3 +179,17 @@ def test_kx2_silence_does_not_block_wintest(tmp_path):
             wt.close()
             await emu.stop(); await kx2.stop()
     run(body())
+
+
+def test_check_wine_com(tmp_path, monkeypatch):
+    from anyrig.local.main import check_wine_com
+    monkeypatch.setenv("WINEPREFIX", str(tmp_path / "wine"))
+    (tmp_path / "wine" / "dosdevices").mkdir(parents=True)
+    pty_link = tmp_path / "anyrig-com1"
+    pty_link.symlink_to("/dev/null")
+    com1 = tmp_path / "wine" / "dosdevices" / "com1"
+    com1.symlink_to("/dev/ttyUSB0")                    # what Wine recreated on the author's laptop
+    assert check_wine_com(str(pty_link), "COM1") is False
+    com1.unlink()
+    com1.symlink_to(pty_link)
+    assert check_wine_com(str(pty_link), "COM1") is True

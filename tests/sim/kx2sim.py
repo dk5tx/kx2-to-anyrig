@@ -56,7 +56,7 @@ class KX2Sim(PtySim):
     def _if(self) -> str:
         off = self.raw["RO"]
         return ("IF" + self.raw["FA"] + "     " + off + self.raw["RT"] + self.raw["XT"] + " 00" + "0"
-                + self.raw["MD"] + "0" + self.raw["FT"] + "0001 ")
+                + self.raw["MD"] + self.raw["FR"] + "0" + self.raw["FT"] + "001 ")
 
     def _ic(self) -> str:
         a = 0x80 | (0x20 if self.tx_test else 0)
