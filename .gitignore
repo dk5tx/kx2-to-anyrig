@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.log
+*.wav
+.pytest_cache/
+config/local.yaml
+config/remote.yaml
