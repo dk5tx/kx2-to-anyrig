@@ -15,6 +15,7 @@ from typing import Any
 from ..common import protocol
 from ..common.protocol import Connection
 from ..drivers.base import Rig
+from .cwtext import CWSender
 
 log = logging.getLogger("remote")
 
@@ -35,6 +36,8 @@ class RemoteServer:
         self.port: int | None = None
         rig.state.subscribe(self._on_rig_change)
         rig.on_meters = self._on_meters
+        self.cw = CWSender(rig, rig.profile.get("cw"), on_done=self._cw_done)
+        rig.on_raw = self.cw.on_raw
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -43,11 +46,13 @@ class RemoteServer:
         self.port = self.server.sockets[0].getsockname()[1]
         self._tasks.append(asyncio.create_task(self._watchdog(), name="watchdog"))
         self._tasks.append(asyncio.create_task(self._meter_flush(), name="meters"))
+        self.cw.start()
         log.info("listening on %s:%s", listen["host"], self.port)
 
     async def stop(self) -> None:
         for t in self._tasks:
             t.cancel()
+        await self.cw.stop()
         if self.conn:
             self.conn.close()
         if self.server:
@@ -61,6 +66,7 @@ class RemoteServer:
             log.warning("new client %s replaces %s", conn.peer, self.conn.peer)
             self.conn.close()
         self.conn = conn
+        self.cw.blocked = False                  # safety block ends with a new connection
         log.info("client connected: %s", conn.peer)
         conn.send({"t": "hello", "role": "remote", "version": protocol.VERSION,
                    "rig": self.rig.profile.get("name"), "caps": sorted(self.rig.capabilities())})
@@ -94,13 +100,17 @@ class RemoteServer:
             self._action(str(msg.get("a", "")))
         elif t == "hello":
             log.info("client hello: %s", msg)
-        elif t in ("cw", "cw_abort"):
-            if t == "cw_abort":
-                self.rig.abort_cw()
-            else:
-                log.warning("CW text not implemented yet (milestone M4)")
+        elif t == "cw":
+            self.cw.send(str(msg.get("text", "")), msg.get("id"))
+        elif t == "cw_abort":
+            self.cw.abort()
         else:
             log.debug("unknown message %s", msg)
+
+    def _cw_done(self, ids: list) -> None:
+        if self.conn:
+            for i in ids:
+                self.conn.send({"t": "cw_done", "id": i})
 
     def _action(self, name: str) -> None:
         spec = (self.rig.profile.get("actions") or {}).get(name)
@@ -140,6 +150,8 @@ class RemoteServer:
 
     def _safety(self, reason: str) -> None:
         try:
+            self.cw.blocked = True
+            self.cw.abort()
             self.rig.unkey()
             log.info("safety (%s): rig unkeyed", reason)
         except Exception as exc:          # never let safety crash the server

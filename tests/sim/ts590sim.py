@@ -105,9 +105,10 @@ class TS590Sim(PtySim):
             else:
                 text = arg[1:] if arg.startswith(" ") else arg      # "KY " + 24 chars
                 self.packets.append(text)
-                # trailing spaces (content or padding) end up as one word gap
-                text = text.rstrip(" ") + (" " if text.endswith(" ") else "")
-                text = text.lstrip(" ")                              # measured: leading space dropped
+                # Kenwood: blank (padding) positions are not keyed; measured: a leading space is
+                # dropped. Packets are joined seamlessly.
+                text = text.rstrip(" ")
+                text = text.lstrip(" ")
                 self._ky_queue.append(text)
                 if not self.tx:
                     self._start_tx(now)
@@ -173,8 +174,8 @@ class TS590Sim(PtySim):
                     self.send("?;")
                     return
                 self.raw[key] = arg
-                if key == "MD":
-                    self._ai("MD" + arg + ";")
+                # measured: the TS-590SG confirms every CAT set by Auto-Info
+                self._ai(key + arg + ";")
             return
         if not arg:
             self.send("?;")

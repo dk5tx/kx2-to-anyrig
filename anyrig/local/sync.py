@@ -68,6 +68,9 @@ class Sync:
         self._last_forward: dict[str, float] = {}
         self._quiet_until = 0.0
         self._timers: dict[str, asyncio.TimerHandle] = {}
+        self.winkeyer: Any = None             # WinKeyerEmulator, set by main
+        self._cw_id = 0
+        self._cw_open: set[int] = set()
         state.subscribe(self._on_local_change)
 
     # ------------------------------------------------------------------ helpers
@@ -125,6 +128,28 @@ class Sync:
             return
         self.link.send({"t": "set", "k": spec["key"], "v": spec["on"] if value else spec["off"]})
 
+    # ------------------------------------------------------------------ CW (WinKeyer -> remote)
+    def cw_text(self, text: str) -> None:
+        self._cw_id += 1
+        if self.link.send({"t": "cw", "text": text, "id": self._cw_id}):
+            self._cw_open.add(self._cw_id)
+        else:
+            log.warning("no remote connection – CW %r not sent", text)
+            self._cw_idle()
+
+    def cw_abort(self) -> None:
+        self.link.send({"t": "cw_abort"})
+        self._cw_open.clear()
+
+    def cw_speed(self, wpm: int) -> None:
+        self.state.set("keyer_wpm", wpm, "wintest")        # forwarded to the rig (KS)
+        if self.kx2 is not None:
+            self.kx2.write_state("keyer_wpm", wpm)         # and shown on the KX2
+
+    def _cw_idle(self) -> None:
+        if self.winkeyer is not None and not self._cw_open:
+            self.winkeyer.done()
+
     def send_raw(self, cmd: str) -> None:
         if not self.link.send({"t": "raw", "d": cmd}):
             log.warning("no remote connection – dropped %s", cmd)
@@ -149,6 +174,9 @@ class Sync:
             log.info("rig snapshot received – rig is master, syncing KX2")
             self.resync()                      # sets a quiet period itself if band/mode change
             self.ready = True
+        elif t == "cw_done":
+            self._cw_open.discard(msg.get("id"))
+            self._cw_idle()
         elif t == "meters":
             self.meters = msg
         elif t == "hello":
@@ -157,6 +185,9 @@ class Sync:
 
     def on_disconnect(self) -> None:
         self.ready = False
+        self._cw_open.clear()
+        if self.winkeyer is not None:
+            self.winkeyer.set_busy(False)
         for h in self._timers.values():
             h.cancel()
         self._timers.clear()

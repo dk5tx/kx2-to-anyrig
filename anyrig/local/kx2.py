@@ -54,6 +54,9 @@ GUARD_AI = 1.5
 # 14 014 520 read back). That truncated value is rounding, not an operator action.
 FREQ_RESOLUTION = 10
 FREQ_KEYS = ("freq_a", "freq_b")
+# KX2 value ranges: a value set by the rig/Win-Test outside the range is clamped by the KX2;
+# that clamped read-back is not an operator action (e.g. 60 WPM from Win-Test -> KX2 shows 50)
+KX2_RANGES = {"keyer_wpm": (8, 50)}
 
 
 @dataclass
@@ -218,6 +221,13 @@ class KX2Link:
                         and v == cur - cur % FREQ_RESOLUTION:
                     self._guard.pop(k, None)
                     continue           # KX2 rounding of a rig/Win-Test frequency – keep the exact value
+            if k in KX2_RANGES and isinstance(v, int):
+                cur = self.state.get(k)
+                _, cur_src = self.state.last_change(k)
+                lo, hi = KX2_RANGES[k]
+                if isinstance(cur, int) and cur_src != "kx2" and v != cur and v == max(lo, min(hi, cur)):
+                    self._guard.pop(k, None)
+                    continue           # KX2 clamped a value it cannot show – keep the real one
             g = self._guard.get(k)
             if g:
                 wanted, until_poll, until_ai = g

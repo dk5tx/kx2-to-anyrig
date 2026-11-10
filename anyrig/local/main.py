@@ -23,6 +23,7 @@ from .kx2 import KX2Link
 from .link import RemoteLink
 from .router import Router
 from .sync import Sync
+from .winkeyer import WinKeyerEmulator
 
 log = logging.getLogger("kx2-local")
 
@@ -44,6 +45,18 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     router = Router(cfg["router"], to_kx2=kx2.write, to_remote=sync.send_raw if sync else None,
                     traffic=traffic)
     emu = K3Emulator(cfg["wintest"]["cat_pty_link"], state, kx2, router, traffic)
+    wk: WinKeyerEmulator | None = None
+    if cfg["wintest"].get("winkeyer_pty_link"):
+        if sync:
+            wk = WinKeyerEmulator(cfg["wintest"]["winkeyer_pty_link"], on_text=sync.cw_text,
+                                  on_abort=sync.cw_abort, on_speed=sync.cw_speed, traffic=traffic)
+            sync.winkeyer = wk
+        else:
+            wk = WinKeyerEmulator(cfg["wintest"]["winkeyer_pty_link"],
+                                  on_text=lambda t: (log.warning("local-only: CW %r not keyed", t),
+                                                     wk.done()),
+                                  on_abort=lambda: None,
+                                  on_speed=lambda w: kx2.write_state("keyer_wpm", w), traffic=traffic)
 
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -60,6 +73,9 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
         traffic.close()
         raise SystemExit(1)
     emu.start()
+    if wk:
+        wk.start()
+        check_wine_com(cfg["wintest"]["winkeyer_pty_link"], "COM2")
     if link:
         link.start()
         log.info("connecting to remote %s:%s", cfg["remote"]["host"], cfg["remote"]["port"])
@@ -71,6 +87,8 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     finally:
         if link:
             await link.stop()
+        if wk:
+            await wk.stop()
         await emu.stop()
         await kx2.stop()
         traffic.close()

@@ -94,6 +94,19 @@ rit:
 meters:
   max: 30                     # SM / RM values are 0..30
 
+# CW text output (KY). Measured: 24 chars per packet, a leading space in a packet is dropped,
+# KY; -> KY0 room / KY1 full, KY0; aborts after the current element, KY -> TX0 in 11-16 ms.
+cw:
+  method: ky
+  packet_len: 24
+  packet: "KY {text};"
+  query: "KY;"
+  full_reply: KY1
+  free_reply: KY0
+  abort: "KY0;"
+  poll_ms: 50
+  start_delay_ms: 15
+
 # notch: 0 off, 1 auto (SSB only), 2 manual (SSB and CW); set as NT<P1>0
 actions:
   beat_cancel_toggle:   {key: beat_cancel, values: [0, 1]}

@@ -3,7 +3,7 @@
 Use an **Elecraft KX2** as the local control head for your transceiver at home –
 for remote contesting with Win-Test (CW first).
 
-> Status: **in development.** Milestone M3 (two-way sync KX2 ↔ TS-590SG) is ready for testing.
+> Status: **in development.** Milestone M4 (CW macros from Win-Test via WinKeyer emulation) is ready for testing.
 > The measurement tools in `tools/` work today.
 
 ## Trying milestone M1 (local only, no remote rig yet)
@@ -68,7 +68,27 @@ Safety: if the laptop or the network goes away, anyrig-remote unkeys the rig wit
 - After a band or mode change at the rig, the KX2's own band/mode memories do not overwrite the rig.
 - NR is switched on the KX2 with a held PRE key (`SWH19`), the KX2 has no NR command.
 
-Not yet: CW macros (M4), audio (M5), web UI (M6).
+### Milestone M4: CW macros (WinKeyer emulation → `KY`)
+
+kx2-local offers a second virtual port that behaves like a K1EL WinKeyer. Win-Test sends its
+macros there; the text is keyed by the rig's internal keyer (`KY`), no keying line is involved.
+
+```bash
+# once: Wine COM2 -> WinKeyer emulation
+wine reg add 'HKLM\Software\Wine\Ports' /v COM2 /t REG_SZ /d /tmp/anyrig-com2 /f && wineserver -k
+```
+In Win-Test: Options → Configure Interfaces → COM2 = **WinKeyer** (no CW/PTT on COM1).
+
+- F1–F8 macros start at once (text is sent per word / after 20 ms idle).
+- Speed keys (PgUp/PgDn) set `KS` on the rig and on the KX2 (the KX2 shows at most 50 WPM).
+- ESC sends `KY0;`: keying stops after the current element.
+- `KY` packets are cut inside words, never at a word gap (the rig drops a space at the start of a
+  packet), so no word gap is lost.
+- Busy status for Win-Test lasts until the estimated end of keying.
+- If the control link is lost, CW is blocked until the next connect.
+- Every WinKeyer byte is logged in the traffic log (`WK>` / `WK<`).
+
+Not yet: audio (M5), web UI (M6).
 
 ## Idea
 

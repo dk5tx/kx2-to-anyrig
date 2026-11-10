@@ -1,0 +1,188 @@
+"""Milestone M4: Morse timing, KY packet splitting, WinKeyer protocol, end to end CW."""
+
+import asyncio
+import os
+import time
+
+from anyrig.common import morse
+from anyrig.local.winkeyer import VERSION, WinKeyerEmulator
+from anyrig.remote.cwtext import split_packet
+from tests.sim.kx2sim import KX2Sim
+from tests.sim.ts590sim import TS590Sim
+from tests.test_local_m1 import wait_for
+from tests.test_m2_end_to_end import Stack
+
+# the text from the author's ky_test.py run (8 Nov 2026) that lost a word gap
+LONG = "CQ CQ TEST DL1ABC DL1ABC TEST CQ CQ TEST DL1ABC DL1ABC TEST"
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+# ---------------------------------------------------------------------- pure functions
+def test_morse_paris():
+    assert morse.units("PARIS ") == 50
+    assert abs(morse.duration("PARIS ", 20) - 3.0) < 1e-9
+    assert morse.units("E") == 1 and morse.units("T") == 3 and morse.units("EE") == 5
+    assert morse.elements("ET") == [(True, 1), (False, 3), (True, 3)]
+
+
+def test_split_never_starts_rest_with_space():
+    text = LONG
+    packets = []
+    while text:
+        p, text = split_packet(text, 24)
+        assert len(p) <= 24 and p
+        assert not text.startswith(" ") and not p.endswith(" ")
+        packets.append(p)
+    assert "".join(packets) == LONG
+    # the measured failure case: 24 chars, then a word starting with a space -> cut inside a word
+    p, rest = split_packet("CQ CQ TEST DL1ABC DL1ABC TEST", 24)
+    assert p == "CQ CQ TEST DL1ABC DL1AB" and rest == "C TEST"
+    # a space just before the cut is not left at the packet end either
+    p, rest = split_packet("CQ CQ TEST DL1ABC DL1ABC X TEST", 26)
+    assert p == "CQ CQ TEST DL1ABC DL1AB" and rest == "C X TEST"
+    p, rest = split_packet("ABCDEFGHIJKLMNOPQRSTUVW Z TEST", 24)
+    assert not p.endswith(" ") and not rest.startswith(" ")
+
+
+# ---------------------------------------------------------------------- WinKeyer protocol
+class FakeWT:
+    """Win-Test side of the WinKeyer pty (bytes)."""
+
+    def __init__(self, device):
+        self.fd = os.open(device, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        self.rx = bytearray()
+
+    def send(self, data: bytes):
+        os.write(self.fd, data)
+
+    async def read(self, n=1, timeout=0.5):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end and len(self.rx) < n:
+            try:
+                self.rx += os.read(self.fd, 4096)
+            except BlockingIOError:
+                pass
+            await asyncio.sleep(0.005)
+        out = bytes(self.rx[:n])
+        del self.rx[:n]
+        return out
+
+    async def drain(self, timeout=0.2):
+        await asyncio.sleep(timeout)
+        try:
+            self.rx += os.read(self.fd, 4096)
+        except BlockingIOError:
+            pass
+        out = bytes(self.rx)
+        self.rx.clear()
+        return out
+
+    def close(self):
+        os.close(self.fd)
+
+
+def test_winkeyer_protocol(tmp_path):
+    async def body():
+        texts, aborts, speeds = [], [], []
+        wk = WinKeyerEmulator(str(tmp_path / "com2"), on_text=texts.append,
+                              on_abort=lambda: aborts.append(1), on_speed=speeds.append)
+        wk.start()
+        wt = FakeWT(str(tmp_path / "com2"))
+        wt.send(b"\x00\x02")                                   # host open
+        assert await wt.read(1) == bytes([VERSION])
+        wt.send(b"\x00\x04\x55")                               # echo test
+        assert await wt.read(1) == b"\x55"
+        wt.send(bytes([0x0F]) + bytes(range(1, 16)) + b"\x02\x1e")   # load defaults + speed 30
+        await asyncio.sleep(0.05)
+        assert speeds[-1] == 30
+        wt.send(b"\x16\x03\x05\x16\x00\x13")                    # pointer cmds incl. 2-byte variant, null
+        wt.send(b"CQ TEST DK5TX\x1bAR")                        # text + merged AR
+        assert await wt.read(1) == b"\xc4"                     # busy
+        await asyncio.sleep(0.1)
+        assert texts == ["CQ TEST DK5TX_"]
+        wk.done()
+        assert await wt.read(1) == b"\xc0"                     # idle
+        wt.send(b"TU\x0a")                                     # text, then clear buffer (ESC)
+        await asyncio.sleep(0.1)
+        assert aborts and texts == ["CQ TEST DK5TX_"]          # aborted text never sent
+        wt.send(b"\x15")                                       # request status
+        st = await wt.drain()
+        assert st.endswith(b"\xc0")
+        wt.close()
+        await wk.stop()
+    run(body())
+
+
+# ---------------------------------------------------------------------- end to end
+async def cw_stack(tmp_path, ksim, rsim):
+    s = await Stack().start(tmp_path, ksim, rsim)
+    await s.settle()
+    wk = WinKeyerEmulator(str(tmp_path / "com2"), on_text=s.sync.cw_text, on_abort=s.sync.cw_abort,
+                          on_speed=s.sync.cw_speed)
+    s.sync.winkeyer = wk
+    wk.start()
+    s.wk = wk
+    wt = FakeWT(str(tmp_path / "com2"))
+    wt.send(b"\x00\x02")
+    assert await wt.read(1) == bytes([VERSION])
+    return s, wt
+
+
+def test_macro_keyed_with_all_word_gaps(tmp_path):
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim(time_scale=0.05) as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            wt.send(b"\x02\x3c")                               # 60 WPM keeps the test short
+            assert await wait_for(lambda: rsim.raw["KS"] == "060", 1.0)
+            assert await wait_for(lambda: ksim.raw["KS"] == "050", 1.0)    # KX2 maximum is 50
+            await asyncio.sleep(2.5)                           # KS is polled slowly on the KX2
+            assert rsim.raw["KS"] == "060"                     # the KX2 clamp is not sent back
+            t0 = time.monotonic()
+            wt.send(LONG.encode())                             # F1 macro
+            assert await wt.read(1) == b"\xc4"
+            assert await wait_for(lambda: "TX0" in rsim.received or rsim.tx, 1.0)
+            assert time.monotonic() - t0 < 0.15                # keying starts at once
+            done = await wt.read(1, timeout=12.0)
+            assert done == b"\xc0"                             # idle after the estimated keying time
+            assert rsim.sent_text.strip() == LONG              # no word gap lost
+            assert all(not p.startswith(" ") for p in rsim.packets)
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())
+
+
+def test_esc_aborts_immediately(tmp_path):
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim(time_scale=1.0) as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            wt.send(b"CQ CQ CQ TEST DK5TX DK5TX TEST")
+            assert await wt.read(1) == b"\xc4"
+            assert await wait_for(lambda: rsim.tx, 1.0)
+            t0 = time.monotonic()
+            wt.send(b"\x0a")                                   # ESC in Win-Test
+            assert await wt.read(1) == b"\xc0"
+            assert await wait_for(lambda: "KY0" in rsim.received, 0.5)
+            assert time.monotonic() - t0 < 0.2
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())
+
+
+def test_cw_blocked_after_link_loss_until_reconnect(tmp_path):
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim() as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            s.server._safety("test")
+            assert s.server.cw.blocked
+            s.server.cw.send("TEST", 99)
+            await asyncio.sleep(0.1)
+            assert not [f for f in rsim.received if f.startswith("KY ") and "TEST" in f]
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())
