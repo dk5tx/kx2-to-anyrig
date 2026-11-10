@@ -3,7 +3,7 @@
 Use an **Elecraft KX2** as the local control head for your transceiver at home –
 for remote contesting with Win-Test (CW first).
 
-> Status: **in development.** Milestone M4 (CW macros from Win-Test via WinKeyer emulation) is ready for testing.
+> Status: **in development.** Milestones M1–M4 work on the author's station (KX2 + TS-590SG + Win-Test, CW macros included). Next: M5 audio.
 > The measurement tools in `tools/` work today.
 
 ## Trying milestone M1 (local only, no remote rig yet)

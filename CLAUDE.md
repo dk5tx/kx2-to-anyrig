@@ -356,6 +356,8 @@ prosign map, mode-dependent commands, capabilities, ignore list (`RS`).
 - **M3 Reverse sync + router**: rig → KX2, loop protection, TX/ATU suppression, CW tune follow-up, Lua passthrough rules.
   Acceptance: author's scripts (FW…, RA, PA, AN, CA1, RC, AC111) work; KX2 shows the rig's state; no oscillation.
 - **M4 WinKeyer emulation + KY**: Acceptance: Win-Test F1–F8 macros, speed keys and ESC work; no lost word spaces.
+  **Accepted on hardware 10 Nov 2026** (26 WPM: clean gaps, CQ repeat 3.0 s → 3.04–3.15 s after keying end,
+  ESC, speed keys, keyboard mode).
 - **M5 Audio**: Acceptance: sidetone and RX audio on the laptop, measured latency documented, AF knob = volume.
 - **M6 Web UI + safety**: meters, buttons, watchdog/TX timeout tests (pull the network cable → TX stops ≤ 1 s).
 - **M7 Packaging & docs**: install guide (apt packages, dialout group, Wine COM links, Win-Test settings), systemd user
