@@ -49,7 +49,8 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     if cfg["wintest"].get("winkeyer_pty_link"):
         if sync:
             wk = WinKeyerEmulator(cfg["wintest"]["winkeyer_pty_link"], on_text=sync.cw_text,
-                                  on_abort=sync.cw_abort, on_speed=sync.cw_speed, traffic=traffic)
+                                  on_abort=sync.cw_abort, on_speed=sync.cw_speed, traffic=traffic,
+                                  on_end=sync.cw_end)
             sync.winkeyer = wk
         else:
             wk = WinKeyerEmulator(cfg["wintest"]["winkeyer_pty_link"],

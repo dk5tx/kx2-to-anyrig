@@ -6,7 +6,7 @@ import time
 
 from anyrig.common import morse
 from anyrig.local.winkeyer import VERSION, WinKeyerEmulator
-from anyrig.remote.cwtext import split_packet
+from anyrig.remote.cwtext import next_packet
 from tests.sim.kx2sim import KX2Sim
 from tests.sim.ts590sim import TS590Sim
 from tests.test_local_m1 import wait_for
@@ -28,23 +28,20 @@ def test_morse_paris():
     assert morse.elements("ET") == [(True, 1), (False, 3), (True, 3)]
 
 
-def test_split_never_starts_rest_with_space():
-    text = LONG
-    packets = []
+def test_packets_are_complete_words():
+    # padding is keyed as a word gap (measured 10 Nov 2026): packets end at word ends
+    assert next_packet("CQ", 24, False) is None                       # word may go on
+    assert next_packet("CQ ", 24, False) == ("CQ", "")
+    assert next_packet("CQ D", 24, False) == ("CQ", "D")
+    assert next_packet("TEST", 24, True) == ("TEST", "")              # last word of a message
+    text, packets = LONG, []
     while text:
-        p, text = split_packet(text, 24)
-        assert len(p) <= 24 and p
-        assert not text.startswith(" ") and not p.endswith(" ")
+        p, text = next_packet(text, 24, True)
+        assert len(p) <= 23 and not p.startswith(" ") and not p.endswith(" ")
         packets.append(p)
-    assert "".join(packets) == LONG
-    # the measured failure case: 24 chars, then a word starting with a space -> cut inside a word
-    p, rest = split_packet("CQ CQ TEST DL1ABC DL1ABC TEST", 24)
-    assert p == "CQ CQ TEST DL1ABC DL1AB" and rest == "C TEST"
-    # a space just before the cut is not left at the packet end either
-    p, rest = split_packet("CQ CQ TEST DL1ABC DL1ABC X TEST", 26)
-    assert p == "CQ CQ TEST DL1ABC DL1AB" and rest == "C X TEST"
-    p, rest = split_packet("ABCDEFGHIJKLMNOPQRSTUVW Z TEST", 24)
-    assert not p.endswith(" ") and not rest.startswith(" ")
+    assert packets == ["CQ CQ TEST DL1ABC", "DL1ABC TEST CQ CQ TEST", "DL1ABC DL1ABC TEST"]
+    # a word longer than a packet is cut into full (seamless) packets
+    assert next_packet("A" * 30, 24, False) == ("A" * 24, "A" * 6)
 
 
 # ---------------------------------------------------------------------- WinKeyer protocol
@@ -121,7 +118,7 @@ async def cw_stack(tmp_path, ksim, rsim):
     s = await Stack().start(tmp_path, ksim, rsim)
     await s.settle()
     wk = WinKeyerEmulator(str(tmp_path / "com2"), on_text=s.sync.cw_text, on_abort=s.sync.cw_abort,
-                          on_speed=s.sync.cw_speed)
+                          on_speed=s.sync.cw_speed, on_end=s.sync.cw_end)
     s.sync.winkeyer = wk
     wk.start()
     s.wk = wk
@@ -201,11 +198,12 @@ def test_wintest_char_by_char_with_echo(tmp_path):
             for i, ch in enumerate(text.encode()):
                 wt.send(bytes([ch]))
                 while True:                                    # wait for this character's echo
-                    b = await wt.read(1, timeout=0.5)
+                    b = await wt.read(1, timeout=3.0)
                     assert b, "no echo for %r" % chr(ch)
                     if b < b"\xc0":
                         break
                 got += b
+                last_echo = time.monotonic()
                 if i == 0:
                     assert time.monotonic() - t0 < 0.05        # echo comes at once
                 await asyncio.sleep(0.03)                      # Win-Test's own pacing
@@ -214,10 +212,12 @@ def test_wintest_char_by_char_with_echo(tmp_path):
             for _ in range(200):
                 if (await wt.read(1, timeout=0.1)) == b"\xc0":
                     break
-            assert rsim.sent_text == text                      # no gap lost, none inserted
+            assert rsim.sent_text.strip() == text              # no gap lost, none inserted
             packets = [p.rstrip(" ") for p in rsim.packets]    # strip the padding
             assert all(not p.startswith(" ") for p in packets)
-            assert "".join(packets) == text                     # word gaps only inside packets
+            assert " ".join(packets) == text                   # every packet ends at a word end
+            # Win-Test must not see the message as sent long before it is keyed
+            assert last_echo - t0 > 0.4 * morse.duration(text, 60)
             wt.close()
             await s.wk.stop()
             await s.stop()

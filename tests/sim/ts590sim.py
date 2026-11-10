@@ -105,10 +105,10 @@ class TS590Sim(PtySim):
             else:
                 text = arg[1:] if arg.startswith(" ") else arg      # "KY " + 24 chars
                 self.packets.append(text)
-                # Kenwood: blank (padding) positions are not keyed; measured: a leading space is
-                # dropped. Packets are joined seamlessly.
-                text = text.rstrip(" ")
-                text = text.lstrip(" ")
+                # measured: a leading space is dropped; the padding of a short packet is keyed as
+                # one word gap; full packets are joined seamlessly
+                padded = text.endswith(" ")
+                text = text.strip(" ") + (" " if padded else "")
                 self._ky_queue.append(text)
                 if not self.tx:
                     self._start_tx(now)

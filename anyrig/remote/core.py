@@ -101,7 +101,7 @@ class RemoteServer:
         elif t == "hello":
             log.info("client hello: %s", msg)
         elif t == "cw":
-            self.cw.send(str(msg.get("text", "")), msg.get("id"))
+            self.cw.send(str(msg.get("text", "")), msg.get("id"), end=bool(msg.get("end")))
         elif t == "cw_abort":
             self.cw.abort()
         else:

@@ -129,13 +129,19 @@ class Sync:
         self.link.send({"t": "set", "k": spec["key"], "v": spec["on"] if value else spec["off"]})
 
     # ------------------------------------------------------------------ CW (WinKeyer -> remote)
-    def cw_text(self, text: str) -> None:
+    def cw_text(self, text: str, end: bool = False) -> None:
         self._cw_id += 1
-        if self.link.send({"t": "cw", "text": text, "id": self._cw_id}):
+        msg = {"t": "cw", "text": text, "id": self._cw_id}
+        if end:
+            msg["end"] = True                          # message complete: key the last word
+        if self.link.send(msg):
             self._cw_open.add(self._cw_id)
         else:
             log.warning("no remote connection – CW %r not sent", text)
             self._cw_idle()
+
+    def cw_end(self, text: str) -> None:
+        self.cw_text(text, end=True)
 
     def cw_abort(self) -> None:
         self.link.send({"t": "cw_abort"})
