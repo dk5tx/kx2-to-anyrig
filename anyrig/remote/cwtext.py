@@ -42,7 +42,8 @@ DEFAULTS = {
     "poll_ms": 50,
     "start_delay_ms": 15,               # measured: command -> TX0 11-16 ms
     "lead_ms": 300,                     # ask KY; only if the rig still has this much to key
-    "final_lead_ms": 60,                # send the marked last word this long before the rig is idle
+    "final_lead_ms": 60,
+    "word_gap_units": 7,                # gap the rig keys for the padding (TS-590SG: 6, measured)                # send the marked last word this long before the rig is idle
     # safety net only: no end mark and no text for this long -> send the last word. Must be longer
     # than the local side holds an echo back (up to one word at slow speed; 10 Nov 2026 a 3 s value
     # split "TEST" into "T" + "EST" because the echo of "T" was held for 3.1 s)
@@ -178,7 +179,7 @@ class CWSender:
                     self.packets.append(chunk)
                     unit = 1.2 / self.wpm()
                     start = max(now + self.cfg["start_delay_ms"] / 1000.0,
-                                self._est_end + (7 if self._last_padded else 3) * unit
+                                self._est_end + (self.cfg["word_gap_units"] if self._last_padded else 3) * unit
                                 if self._est_end > now else 0.0)
                     self._last_padded = len(chunk) < maxlen
                     self._est_end = start + morse.duration(chunk, self.wpm())

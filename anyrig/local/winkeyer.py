@@ -104,7 +104,8 @@ class WinKeyerEmulator:
     def __init__(self, link: str | None, on_text: Callable[[str], None],
                  on_abort: Callable[[], None], on_speed: Callable[[int], None],
                  traffic: TrafficLog | None = None, flush_ms: float = 20.0,
-                 on_end: Callable[[str], None] | None = None, end_ms: float = 150.0):
+                 on_end: Callable[[str], None] | None = None, end_ms: float = 150.0,
+                 cq_repeat_s: float | None = None):
         self.port = PtyPort(link)
         self.on_text = on_text
         self.on_abort = on_abort
@@ -112,7 +113,12 @@ class WinKeyerEmulator:
         self.traffic = traffic
         self.flush_delay = flush_ms / 1000.0
         self.on_end = on_end                # on_end(text): last text of a message (may be "")
-        self.end_delay = end_ms / 1000.0
+        self.end_delay = end_ms / 1000.0         # after an echo at macro pace
+        self.end_delay_first = 0.35             # after the first character of a message
+        self.end_delay_typing = 0.8             # keyboard mode: keys come slower than 80 ms
+        self.cq_repeat_s = cq_repeat_s           # configured Win-Test repeat interval (optional)
+        self.word_gap_units = 6                 # TS-590SG keys 6 units between words (measured)
+        self.repeat_comp = 0.2                  # first word must arrive before keying starts
         self._end_timer: asyncio.TimerHandle | None = None
         self.open = False
         self.wpm = 0
@@ -125,8 +131,9 @@ class WinKeyerEmulator:
         # echo pacing: complete words [(text, complete_time)], word being received, held echo
         self.latency = 0.05             # estimated time from complete word to keying start [s]
         self.margin = 0.6               # echo the next word this long before the previous one ends
-        self.append_s = 0.5             # clear+text this soon after the last echo: append (typing)
-        self.pace_s = 0.05              # Win-Test sends the next character within this after an echo
+        self.defer_s = 1.5              # clear+text this long after the last echo while busy: repeat
+        self._typing = False            # this message comes slower than macro pace
+        self._chars = 0                 # characters of the current message
         self._done_at = 0.0             # when the remote reported the last message as keyed
         self._prev_pause: float | None = None
         self._last_echo = 0.0
@@ -277,47 +284,50 @@ class WinKeyerEmulator:
         self._seen("clear")
         now = time.monotonic()
         pause = now - self._last_echo
-        # Win-Test sends the next character ~55 ms after an echo; "clear + text" instead, with no
-        # echo outstanding, means Win-Test had nothing more to send (keyboard mode, CQ repeat)
-        finished = self._held is None and (self._complete or pause > self.pace_s)
-        repeat = text_follows and self._is_repeat(pause)
-        if text_follows and self.busy and self._defer is None and finished:
-            if pause < self.append_s and not repeat:
+        if not text_follows or self._held is not None:
+            # ESC, or Win-Test gave up a message it was still sending (another F key)
+            self._abort()
+            return
+        repeat = self._is_repeat(pause)
+        if self._defer is not None:
+            return                                      # already waiting for the rig
+        if self.busy:
+            if repeat or pause >= self.defer_s:
+                log.info("CQ repeat while the rig is still keying: starts %.1f s after the end", pause)
+                self._defer = max(0.0, pause - self.repeat_comp)
+                self._defer_text = []
+            else:
                 log.debug("clear+text %.2f s after the last echo: appended (keyboard mode)", pause)
                 self._complete = False
-                return
-            log.info("CQ repeat while the rig is still keying: starts %.1f s after the end", pause)
-            self._defer = pause
-            self._defer_text = []
             return
-        if text_follows and not self.busy:
-            # a new message while the rig is (estimated to be) idle: no KY0, it could cut the
-            # last element of the previous message if the estimate was a little early
-            self._abort(send=False)
-            if repeat and self._done_at > self._last_echo:
-                # CQ repeat: Win-Test counted its interval from the last echo, which came
-                # (done - last echo) before the rig finished -> wait that much longer
-                wait = self._done_at + pause - now
-                if wait > 0.02:
-                    log.info("CQ repeat: waiting %.1f s more to keep the interval", wait)
-                    self._defer = 0.0
-                    self._defer_text = []
-                    self._defer_timer = asyncio.get_running_loop().call_later(
-                        wait, self._start_deferred)
-                    self.set_busy(True)
-            return
-        self._abort()
+        # rig (estimated to be) idle: a new message. No KY0, it could cut the last element of
+        # the previous message if the estimate was a little early.
+        self._abort(send=False)
+        if repeat and self._done_at > self._last_echo:
+            # CQ repeat: Win-Test counted its interval from the last echo, which came
+            # (done - last echo) before the rig finished -> wait that much longer
+            wait = self._done_at + pause - self.repeat_comp - now
+            if wait > 0.02:
+                log.info("CQ repeat: waiting %.1f s more to keep the interval", wait)
+                self._defer = 0.0
+                self._defer_text = []
+                self._defer_timer = asyncio.get_running_loop().call_later(wait, self._start_deferred)
+                self.set_busy(True)
 
     def _is_repeat(self, pause: float) -> bool:
         """A CQ repeat comes the same time after the last echo every time."""
         prev = self._prev_pause
         self._prev_pause = pause
-        return prev is not None and pause >= self.append_s and abs(pause - prev) < 0.25
+        if self.cq_repeat_s and abs(pause - self.cq_repeat_s) < 0.3:
+            return True
+        return prev is not None and pause >= 0.8 and abs(pause - prev) < 0.25
 
     def _abort(self, send: bool = True) -> None:
         self._text = ""
         self._reset_words()
         self._complete = False
+        self._chars = 0
+        self._typing = False
         self._defer = None
         self._defer_text = []
         if self._defer_timer:
@@ -345,6 +355,10 @@ class WinKeyerEmulator:
             self._defer_text.append((ch, echo))
             return
         self._complete = False
+        now = time.monotonic()
+        if self._chars and now - self._last_echo > 0.08:
+            self._typing = True                         # slower than Win-Test's macro pace
+        self._chars += 1
         if self._end_timer:
             self._end_timer.cancel()
             self._end_timer = None
@@ -377,7 +391,7 @@ class WinKeyerEmulator:
         unit = 1.2 / (self.wpm or 25)
         starts, end = [], 0.0
         for text, complete in self._words:
-            start = max(complete + self.latency, end + 7 * unit if end else 0.0)
+            start = max(complete + self.latency, end + self.word_gap_units * unit if end else 0.0)
             starts.append(start)
             end = start + morse.duration(text, self.wpm or 25)
         return starts
@@ -417,11 +431,15 @@ class WinKeyerEmulator:
         if self.on_end:
             if self._end_timer:
                 self._end_timer.cancel()
-            self._end_timer = asyncio.get_running_loop().call_later(self.end_delay, self._message_end)
+            delay = self.end_delay_typing if self._typing else \
+                self.end_delay_first if self._chars <= 1 else self.end_delay
+            self._end_timer = asyncio.get_running_loop().call_later(delay, self._message_end)
 
     def _message_end(self) -> None:
         self._end_timer = None
         self._complete = True
+        self._chars = 0
+        self._typing = False
         if self._flush:
             self._flush.cancel()
         self._flush_text(end=True)

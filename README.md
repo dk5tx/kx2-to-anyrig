@@ -83,9 +83,11 @@ In Win-Test: Options → Configure Interfaces → COM2 = **WinKeyer** (no CW/PTT
   The emulation paces the echo so that Win-Test stays about one word ahead of the keying.
 - Speed keys (PgUp/PgDn) set `KS` on the rig and on the KX2 (the KX2 shows at most 50 WPM).
 - ESC sends `KY0;`: keying stops after the current element.
-- CQ repeat: the next CQ starts the set interval after the rig has finished (from the second
-  repeat on exactly; Win-Test itself counts from the last echo, about one word too early).
-- Keyboard mode (Alt+K): typed text is appended; it is keyed word by word, so type ahead.
+- CQ repeat: the next CQ starts the set interval after the rig has finished. Win-Test itself
+  counts from the last echo, about one word too early. Set `wintest.cq_repeat_s` to Win-Test's
+  interval (e.g. `3.0`) so the first pause is right too; otherwise it is learnt from the 2nd one.
+- Keyboard mode (Alt+K): typed text is keyed word by word – a word goes out when you type the
+  space or pause for 0.8 s. Typing ahead gives the smoothest result.
 - Each `KY` packet holds complete words; its space padding is keyed as the word gap
   (measured). Only words longer than 24 characters are split.
 - Busy status for Win-Test lasts until the estimated end of keying.

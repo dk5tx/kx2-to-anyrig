@@ -106,6 +106,7 @@ cw:
   abort: "KY0;"
   poll_ms: 50
   start_delay_ms: 15
+  word_gap_units: 6         # measured 10 Nov 2026: word gap 275-279 ms at 26 WPM, char gap 137-140 ms
 
 # notch: 0 off, 1 auto (SSB only), 2 manual (SSB and CW); set as NT<P1>0
 actions:

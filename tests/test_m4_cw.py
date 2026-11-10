@@ -293,3 +293,49 @@ def test_keyboard_mode_typing_is_appended(tmp_path):
             await s.wk.stop()
             await s.stop()
     run(body())
+
+
+def test_keyboard_two_quick_keys_after_a_pause(tmp_path):
+    """Measured: 'TEST', wait until keyed, then '73' typed 29 ms apart -> only '3' came."""
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim(time_scale=1.0) as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            wt.send(b"\x0e\xb4\x02\x30")
+            assert await wait_for(lambda: rsim.raw["KS"] == "048", 1.0)
+            for ch in b"TEST":
+                await wt_send(wt, bytes([ch]))
+                await asyncio.sleep(0.1)                       # typed, ~6 keys per second
+            assert await wait_for(lambda: rsim.sent_text.strip() == "TEST", 3.0)
+            assert await wait_for(lambda: not s.wk.busy, 3.0)
+            await wt_send(wt, b"7")
+            wt.send(b"\x0a3")                                  # 2nd key right after the echo
+            assert await wait_for(lambda: rsim.sent_text.split() == ["TEST", "73"], 4.0), \
+                rsim.sent_text
+            assert "KY0" not in rsim.received
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())
+
+
+def test_configured_cq_repeat_keeps_first_pause(tmp_path):
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim(time_scale=1.0) as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            s.wk.cq_repeat_s = 1.5
+            wt.send(b"\x0e\xb4\x02\x30")
+            assert await wait_for(lambda: rsim.raw["KS"] == "048", 1.0)
+            msg = b"CQ DL1ABC TEST"
+            echoes = await wt_send(wt, msg)
+            done = None
+            while time.monotonic() < echoes[-1] + 1.5:
+                b = await wt.read(1, timeout=max(0.01, echoes[-1] + 1.5 - time.monotonic()))
+                if b == b"\xc0":
+                    done = time.monotonic()
+            assert done is not None                            # rig finished before the repeat
+            echoes2 = await wt_send(wt, msg)
+            assert abs(echoes2[0] - done - (1.5 - s.wk.repeat_comp)) < 0.15
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())

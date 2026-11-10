@@ -13,6 +13,7 @@ kx2:
 wintest:
   cat_pty_link: /tmp/anyrig-com1      # link ~/.wine/dosdevices/com1 to this
   winkeyer_pty_link: /tmp/anyrig-com2 # link ~/.wine/dosdevices/com2 to this (milestone M4)
+  cq_repeat_s: null          # Win-Test CQ repeat interval [s], e.g. 3.0 – keeps the first pause right
   traffic_log: anyrig-wintest.log     # every frame from/to Win-Test; empty = off
 
 router:

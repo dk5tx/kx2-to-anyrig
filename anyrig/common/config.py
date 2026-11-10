@@ -23,6 +23,7 @@ LOCAL_DEFAULTS: dict[str, Any] = {
         "cat_pty_link": "/tmp/anyrig-com1",
         "winkeyer_pty_link": "/tmp/anyrig-com2",
         "traffic_log": "anyrig-wintest.log",
+        "cq_repeat_s": None,        # Win-Test CQ repeat interval, if used (keeps the first pause right)
     },
     "router": {
         # where commands from Win-Test go that the K3 emulation does not handle itself:
