@@ -399,12 +399,12 @@ class WinKeyerEmulator:
             log.info("WinKeyer echo from the remote keyer: %s", "on" if on else "off")
         self.remote_echo = on
 
-    def echo(self, ch: str) -> None:
-        """Remote keyer started a character (remote_echo mode)."""
+    def echo(self, ch: str, note: str = "") -> None:
+        """Remote keyer reports a character (remote_echo mode)."""
         if not self.echo_enabled:
             return
         rev = {v: k for k, v in MERGE_TO_PROSIGN.items() if k != "VA"}
-        self._send(rev.get(ch, ch).encode("latin-1"), "echo")
+        self._send(rev.get(ch, ch).encode("latin-1"), ("echo " + note).strip())
         self._last_echo = time.monotonic()
 
     def _add_text(self, ch: str, echo: str | None = None) -> None:

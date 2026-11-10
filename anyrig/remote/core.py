@@ -46,6 +46,7 @@ class RemoteServer:
             self.cw = DTRKeyer(keyline, lambda: rig.state.get("keyer_wpm"), cfg.get("cw"),
                                on_done=self._cw_done, on_echo=self._cw_echo,
                                traffic=getattr(rig, "traffic", None))
+            self.cw.on_echo_ts = self._cw_echo
         else:
             self.cw = CWSender(rig, rig.profile.get("cw"), on_done=self._cw_done)
         rig.on_raw = self.cw.on_raw
@@ -135,9 +136,14 @@ class RemoteServer:
             for i in ids:
                 self.conn.send({"t": "cw_done", "id": i})
 
-    def _cw_echo(self, ch: str) -> None:
+    def _cw_echo(self, ch: str, ts: float | None = None) -> None:
         if self.conn:
-            self.conn.send({"t": "cw_echo", "c": ch})
+            msg: dict[str, Any] = {"t": "cw_echo", "c": ch}
+            if ts is not None:
+                # keyer time stamp (remote clock) and how long the event loop took to send it
+                msg["ts"] = round(ts, 4)
+                msg["q"] = round((time.monotonic() - ts) * 1000, 1)
+            self.conn.send(msg)
 
     def _action(self, name: str) -> None:
         spec = (self.rig.profile.get("actions") or {}).get(name)

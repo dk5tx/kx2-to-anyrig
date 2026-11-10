@@ -196,8 +196,15 @@ class Sync:
         elif t == "meters":
             self.meters = msg
         elif t == "cw_echo":
+            note = ""
+            if isinstance(msg.get("ts"), (int, float)):
+                # one-way delay relative to the fastest echo seen (clocks differ, the minimum is
+                # the offset): shows network / event loop jitter in the traffic log
+                d = time.monotonic() - msg["ts"]
+                self._echo_min = min(getattr(self, "_echo_min", d), d)
+                note = "+%.0f ms (remote loop %.0f ms)" % ((d - self._echo_min) * 1000, msg.get("q", 0))
             if self.winkeyer is not None:
-                self.winkeyer.echo(str(msg.get("c", "")))
+                self.winkeyer.echo(str(msg.get("c", "")), note)
         elif t == "hello":
             self.remote_info = msg
             log.info("remote rig: %s, CW: %s", msg.get("rig"), msg.get("cw", "text"))

@@ -56,6 +56,7 @@ class DTRKeyer:
         self.on_done = on_done
         self.on_echo = on_echo
         self.traffic = traffic                  # TrafficLog: "KEY>" line per character (timing)
+        self.on_echo_ts: Callable[[str, float], None] | None = None
         self.blocked = False
         self.retries = 0                        # interface of CWSender (unused here)
         self.chars_keyed = 0
@@ -146,11 +147,18 @@ class DTRKeyer:
         if ids:
             self._call(self.on_done, ids)
 
+    def _echo_out(self, item: str) -> None:
+        """Echo from the keying thread; with the thread's time stamp if wanted (timing check)."""
+        if self.on_echo_ts:
+            self._call(self.on_echo_ts, item, time.monotonic())
+        else:
+            self._call(self.on_echo, item)
+
     def _fire_echo(self) -> None:
         if self._echo_pending:
             _, item = self._echo_pending
             self._echo_pending = None
-            self._call(self.on_echo, item)
+            self._echo_out(item)
 
     def _sleep_until(self, t: float) -> bool:
         """Precise wait (also sends a due echo); False if aborted."""
@@ -216,12 +224,12 @@ class DTRKeyer:
                     next_start = max(next_start, last_end + self.cfg["word_gap_units"] * unit)
                     if self.traffic:
                         self._call(self.traffic.write, "KEY>", "(space)")
-                    self._call(self.on_echo, item)
+                    self._echo_out(item)
                     continue
                 code = morse.CODE.get(item)
                 if not code:
                     log.debug("no Morse code for %r – skipped", item)
-                    self._call(self.on_echo, item)
+                    self._echo_out(item)
                     continue
                 now = time.monotonic()
                 start = max(now, next_start)
