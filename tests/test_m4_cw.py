@@ -339,3 +339,46 @@ def test_configured_cq_repeat_keeps_first_pause(tmp_path):
             await s.wk.stop()
             await s.stop()
     run(body())
+
+
+def test_rejected_or_lost_packets_are_sent_again(tmp_path):
+    """Measured 10 Nov 2026: a KY packet answered with 'E;', the next one ignored silently."""
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim(time_scale=1.0) as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            wt.send(b"\x0e\xb4\x02\x30")
+            assert await wait_for(lambda: rsim.raw["KS"] == "048", 1.0)
+            assert s.server.rig.state.get("vox")
+            rsim.ky_drop_next = True                           # first packet: no reaction
+            await wt_send(wt, b"CQ DL1AB")
+            assert await wait_for(lambda: rsim.tx, 1.0)
+            rsim.ky_error_next = True                          # next packet: "E;"
+            await wt_send(wt, b" TEST", first=b"")
+            assert await wait_for(lambda: rsim.sent_text.split() == ["CQ", "DL1AB", "TEST"], 6.0), \
+                rsim.sent_text
+            assert s.server.cw.retries == 2
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())
+
+
+def test_no_cq_repeat_after_esc(tmp_path):
+    """Measured: ESC, then a typed call exactly at the repeat interval waited 1.5 s."""
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim(time_scale=1.0) as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            s.wk.cq_repeat_s = 1.0
+            wt.send(b"\x0e\xb4\x02\x30")
+            assert await wait_for(lambda: rsim.raw["KS"] == "048", 1.0)
+            echoes = await wt_send(wt, b"CQ DL1AB DL1AB TEST")
+            await asyncio.sleep(0.3)
+            wt.send(b"\x0a")                                   # ESC (operator starts typing)
+            await asyncio.sleep(max(0.0, echoes[-1] + 1.0 - time.monotonic()))
+            t0 = time.monotonic()
+            echoes2 = await wt_send(wt, b"DK4YJ")              # the call, at the repeat time
+            assert echoes2[0] - t0 < 0.1                       # no waiting
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())

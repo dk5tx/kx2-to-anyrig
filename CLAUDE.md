@@ -122,6 +122,8 @@ kx2-local pty and the "CW"/"PTT" options on COM1 must be **off** (a pty has no m
     only for words > 24 chars.
   - abort: keying stops after the current element; `RX;` follows after the break-in delay (SD).
   - timing (10 Nov 2026, 26 WPM): char gap 3 units, **word gap 6 units** (275–279 ms), also at packet edges.
+  - rarely a packet is lost (10 Nov 2026): answered with `E;` (communication error), and the next packet right
+    after was ignored without any answer → resend after `;` on E/O, resend once if no `TX` within 250 ms.
 - Sidetone is on USB audio (menu 06 = sidetone level, 8/20 preferred). Menu 72 = USB output level (RX only).
 - Filter: `FW` only steps 50, 80, 100, 150, 200, 250 … 1000, 1500, 2000, 2500 Hz. `IS` = CW centre 300–1000 Hz (50 Hz steps).
 - RIT offset: no absolute set; use `RC` (clear) + `RU`/`RD` (Hz step).

@@ -45,6 +45,8 @@ class TS590Sim(PtySim):
         self._atu_steps: list[tuple[float, str]] = []
         self._ca_steps: list[tuple[float, str]] = []
         self.rit_offset = 0
+        self.ky_error_next = False
+        self.ky_drop_next = False
 
     # --- helpers
     def _ai(self, text: str) -> None:
@@ -103,6 +105,13 @@ class TS590Sim(PtySim):
                 self._key_until = now
                 self._rx_at = now + int(self.raw["SD"]) / 1000.0 * self.time_scale
             else:
+                if self.ky_error_next:                               # measured rarely: "E;"
+                    self.ky_error_next = False
+                    self.send("E;")
+                    return
+                if self.ky_drop_next:                                # measured once: no reaction
+                    self.ky_drop_next = False
+                    return
                 text = arg[1:] if arg.startswith(" ") else arg      # "KY " + 24 chars
                 self.packets.append(text)
                 # measured: a leading space is dropped; the padding of a short packet is keyed as

@@ -7,6 +7,10 @@ Measured TS-590SG behaviour (docs/measurements.md, hardware tests 8 and 10 Nov 2
 - A space at the **start** of a packet is dropped.
 - Full 24-character packets are joined seamlessly.
 - KY; answers KY0 (buffer has room) or KY1 (full); KY0; aborts after the current element.
+- Rarely a packet is lost (10 Nov 2026: once answered with "E;", once ignored without an answer,
+  right after the error). A packet answered with E/O is sent again after a ";" that resets the
+  rig's command parser; a packet that should start keying but brings no TX within ``verify_ms``
+  (break-in on) is sent again once.
 
 So every packet ends at a word end and the padding *is* the word gap: packets are built from
 complete words only (a word is complete when the space after it has arrived). Only a word longer
@@ -43,7 +47,9 @@ DEFAULTS = {
     "start_delay_ms": 15,               # measured: command -> TX0 11-16 ms
     "lead_ms": 300,                     # ask KY; only if the rig still has this much to key
     "final_lead_ms": 60,
-    "word_gap_units": 7,                # gap the rig keys for the padding (TS-590SG: 6, measured)                # send the marked last word this long before the rig is idle
+    "word_gap_units": 7,
+    "error_replies": ["E", "O"],        # Kenwood: E = communication error, O = overflow
+    "verify_ms": 250,                   # no TX this long after the first packet: send it again                # gap the rig keys for the padding (TS-590SG: 6, measured)                # send the marked last word this long before the rig is idle
     # safety net only: no end mark and no text for this long -> send the last word. Must be longer
     # than the local side holds an echo back (up to one word at slow speed; 10 Nov 2026 a 3 s value
     # split "TEST" into "T" + "EST" because the echo of "T" was held for 3.1 s)
@@ -87,6 +93,10 @@ class CWSender:
         self._reply: asyncio.Future | None = None
         self._task: asyncio.Task | None = None
         self._last_padded = True
+        self._last_cmd: tuple[str, float] | None = None   # last packet command and send time
+        self._retry: asyncio.TimerHandle | None = None
+        self.retries = 0
+        self._tx_seen = False
         self._end = False
         self._last_input = 0.0
         self.packets: list[str] = []
@@ -121,14 +131,55 @@ class CWSender:
             self._ids.append(msg_id)
         self._wake.set()
 
+    def _schedule_retry(self, delay: float, cmd: str) -> None:
+        if self._retry:
+            self._retry.cancel()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._retry = loop.call_later(delay, self._resend, cmd)
+
+    def _resend(self, cmd: str) -> None:
+        self._retry = None
+        if self.blocked:
+            return
+        self.retries += 1
+        self.rig.send_raw(";")                          # end whatever the rig's parser holds
+        self.rig.send_raw(cmd)
+        self._last_cmd = (cmd, time.monotonic())
+        self._est_end = max(self._est_end, time.monotonic()) + 0.03
+
+    def _verify_started(self, cmd: str) -> None:
+        self._retry = None
+        # TX seen since the packet (not the current state: with full break-in a short packet
+        # may already be over)
+        if self._tx_seen or self.rig.state.get("tx") or self.blocked or not self._ids:
+            return
+        log.warning("no TX after %r – sending it again", cmd)
+        self._resend(cmd)
+
     def abort(self) -> None:
+        if self._retry:
+            self._retry.cancel()
+            self._retry = None
+        self._last_cmd = None
         self._pending = ""
         self.rig.send_raw(self.cfg["abort"])
         self._est_end = 0.0
         self._finish()
 
     def on_raw(self, frame: str) -> None:
-        """Rig frames (driver hook): resolves a pending buffer query."""
+        """Rig frames (driver hook): resolves a pending buffer query, repeats a rejected packet."""
+        if frame.startswith("TX"):
+            self._tx_seen = True
+        if frame in self.cfg["error_replies"] and self._last_cmd \
+                and time.monotonic() - self._last_cmd[1] < 0.5:
+            cmd = self._last_cmd[0]
+            self._last_cmd = None
+            log.warning("rig answered %s; to %r – sending it again", frame, cmd)
+            self._schedule_retry(0.02, cmd)
+            return
         if self._reply and not self._reply.done() and frame.startswith(self.cfg["query"][:2]) \
                 and frame in (self.cfg["full_reply"], self.cfg["free_reply"]):
             self._reply.set_result(frame == self.cfg["free_reply"])
@@ -175,7 +226,18 @@ class CWSender:
                     continue
                 chunk, self._pending = nxt
                 if chunk:
-                    self.rig.send_raw(self.cfg["packet"].format(text=chunk.ljust(maxlen)))
+                    cmd = self.cfg["packet"].format(text=chunk.ljust(maxlen))
+                    idle = not self.rig.state.get("tx") and self._est_end <= now
+                    if idle:
+                        self._tx_seen = False
+                    self.rig.send_raw(cmd)
+                    self._last_cmd = (cmd, now)
+                    if idle and self.rig.state.get("vox") and self.cfg.get("verify_ms"):
+                        # break-in on: the rig must go to TX within a few ms (measured 11-16 ms)
+                        if self._retry:
+                            self._retry.cancel()
+                        self._retry = asyncio.get_running_loop().call_later(
+                            self.cfg["verify_ms"] / 1000.0, self._verify_started, cmd)
                     self.packets.append(chunk)
                     unit = 1.2 / self.wpm()
                     start = max(now + self.cfg["start_delay_ms"] / 1000.0,

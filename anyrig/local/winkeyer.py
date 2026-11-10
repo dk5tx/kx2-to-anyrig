@@ -136,6 +136,8 @@ class WinKeyerEmulator:
         self._chars = 0                 # characters of the current message
         self._done_at = 0.0             # when the remote reported the last message as keyed
         self._prev_pause: float | None = None
+        self._aborted = False           # last message ended by ESC
+        self._msg_first: str | None = None      # first character of the last message
         self._last_echo = 0.0
         self._complete = False          # Win-Test has nothing more to send (end mark sent)
         self._defer: float | None = None        # pause of a deferred CQ repeat [s]
@@ -214,7 +216,8 @@ class WinKeyerEmulator:
                     return
                 args = bytes(buf[1:1 + n])
                 if b == 0x0A:                           # clear: does text follow in this write?
-                    self._clear(any(x >= 0x20 for x in buf[1:]))
+                    first = next((chr(x) for x in buf[1:] if x >= 0x20), None)
+                    self._clear(first is not None, first)
                     del buf[:1]
                     continue
                 del buf[:1 + n]
@@ -279,7 +282,7 @@ class WinKeyerEmulator:
         else:
             log.debug("WinKeyer command %s %s accepted", name, args.hex())
 
-    def _clear(self, text_follows: bool) -> None:
+    def _clear(self, text_follows: bool, first: str | None = None) -> None:
         """WinKeyer "clear buffer": ESC, or Win-Test starting a new message (see module doc)."""
         self._seen("clear")
         now = time.monotonic()
@@ -288,7 +291,10 @@ class WinKeyerEmulator:
             # ESC, or Win-Test gave up a message it was still sending (another F key)
             self._abort()
             return
-        repeat = self._is_repeat(pause)
+        # a repeat sends the same message again; never right after an ESC
+        repeat = self._is_repeat(pause) and not self._aborted and first == self._msg_first
+        self._aborted = False
+        self._msg_first = first
         if self._defer is not None:
             return                                      # already waiting for the rig
         if self.busy:
@@ -323,6 +329,9 @@ class WinKeyerEmulator:
         return prev is not None and pause >= 0.8 and abs(pause - prev) < 0.25
 
     def _abort(self, send: bool = True) -> None:
+        if send:                                        # ESC: what follows is no CQ repeat
+            self._aborted = True
+            self._prev_pause = None
         self._text = ""
         self._reset_words()
         self._complete = False
