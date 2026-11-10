@@ -42,7 +42,10 @@ DEFAULTS = {
     "poll_ms": 50,
     "start_delay_ms": 15,               # measured: command -> TX0 11-16 ms
     "lead_ms": 300,                     # ask KY; only if the rig still has this much to key
-    "hold_ms": 3000,                    # no end mark and no text for this long: send the last word
+    # safety net only: no end mark and no text for this long -> send the last word. Must be longer
+    # than the local side holds an echo back (up to one word at slow speed; 10 Nov 2026 a 3 s value
+    # split "TEST" into "T" + "EST" because the echo of "T" was held for 3.1 s)
+    "hold_ms": 15000,
     "allowed": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /?.,=+-'():\"@[_<#>]\\%",
 }
 
