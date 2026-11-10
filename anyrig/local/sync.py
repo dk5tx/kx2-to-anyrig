@@ -50,6 +50,12 @@ BUSY_FLAGS = ("tx", "atu_tuning", "cw_tune")
 # after a rig band/mode change: KX2 memory recalls are not forwarded for this long [s]
 QUIET = 1.5
 BAND_JUMP_HZ = 100_000
+# KX2 A/B swap or band change: the KX2 reports frequency and filter at once (Auto-Info), the mode
+# only with the next poll. A filter forwarded before the mode lands in the rig's old mode
+# (10 Nov 2026: SSB 2.0 kHz became FW2000 in CW, then KX2 and rig pushed the filter back and forth).
+# Filter changes are held this long (or until the mode came) and sent after the mode.
+SWAP_SETTLE = 0.8
+FILTER_KEYS = ("filter_bw", "filter_center")
 
 
 class Sync:
@@ -68,6 +74,9 @@ class Sync:
         self._last_forward: dict[str, float] = {}
         self._quiet_until = 0.0
         self._timers: dict[str, asyncio.TimerHandle] = {}
+        self._prev: dict[str, Any] = {}          # last local value per key (to detect a VFO swap)
+        self._settle_until = 0.0
+        self._held: dict[str, Any] = {}          # filter values held until the mode is known
         self.winkeyer: Any = None             # WinKeyerEmulator, set by main
         self._cw_id = 0
         self._cw_open: set[int] = set()
@@ -92,6 +101,8 @@ class Sync:
     def _on_local_change(self, key: str, value: Any, source: str) -> None:
         if source not in FORWARD_SOURCES:
             return
+        prev = self._prev.get(key)
+        self._prev[key] = value
         first = False
         if source == "kx2" and key not in self._known:
             self._known.add(key)
@@ -108,11 +119,49 @@ class Sync:
                 # KX2 recalled its own band/mode memory after a rig change: rig stays master
                 self._later("quiet", self._quiet_until - now, self.resync)
                 return
-            if self.link.send({"t": "set", "k": key, "v": value}):
-                self.sent += 1
-                self._last_forward[key] = now
+            if source == "kx2" and key in ("freq_a", "freq_b") and isinstance(prev, int) \
+                    and isinstance(value, int):
+                other = self._prev.get("freq_b" if key == "freq_a" else "freq_a")
+                if value == other or abs(value - prev) > BAND_JUMP_HZ:
+                    self._start_settle(now)          # A/B swap or band change on the KX2
+            if key in FILTER_KEYS and source == "kx2" and now < self._settle_until:
+                self._held[key] = value              # sent after the mode
+                return
+            if key == "mode_b" and not self.state.get("split"):
+                # the TS-590SG can set the VFO B mode only by switching to VFO B for a moment
+                # (FR1;MD;FR0 – the receiver "twitches"); needed only for split
+                return
+            self._forward(key, value, now)
+            if key == "mode" and self._held:
+                self._flush_held()
+            if key == "split" and value and self.state.get("mode_b") is not None:
+                self._forward("mode_b", self.state.get("mode_b"), now)
         elif key in self.kx2_keys and source == "kx2" and value is not None:
             self._kx2_key(key, value)
+
+    def _forward(self, key: str, value: Any, now: float) -> None:
+        if self.link.send({"t": "set", "k": key, "v": value}):
+            self.sent += 1
+            self._last_forward[key] = now
+
+    def _start_settle(self, now: float) -> None:
+        self._settle_until = now + SWAP_SETTLE
+        for k in FILTER_KEYS:                      # rig filter reports are echoes of the old mode
+            self._last_forward[k] = now + SWAP_SETTLE
+        self._later("settle", SWAP_SETTLE, self._flush_held)
+        if self.kx2 is not None and hasattr(self.kx2, "query"):
+            try:                                   # get the new mode now instead of the next poll
+                asyncio.get_running_loop().create_task(self.kx2.query("MD;"))
+            except RuntimeError:
+                pass
+
+    def _flush_held(self) -> None:
+        self._settle_until = 0.0
+        held, self._held = self._held, {}
+        now = time.monotonic()
+        for k in FILTER_KEYS:
+            if k in held:
+                self._forward(k, held[k], now)
 
     def _kx2_key(self, key: str, value: Any) -> None:
         """KX2 function without a direct counterpart (APF, notch) -> configured rig function."""

@@ -183,3 +183,44 @@ def test_kx2_10hz_rounding_is_not_forwarded(tmp_path):
             assert await wait_for(lambda: rsim.raw["FA"] == "00014014530", 1.0)
             await s.stop()
     run(body())
+
+
+# ---------------------------------------------------------------------- KX2 A/B swap (10 Nov 2026)
+class _FakeLink:
+    def __init__(self):
+        self.sent = []
+
+    def send(self, msg):
+        self.sent.append(msg)
+        return True
+
+
+def test_kx2_ab_swap_sends_mode_before_filter_and_no_vfo_b_mode():
+    """A/B on the KX2: FA/FB swap and the filter come by Auto-Info, the mode later by poll.
+    Measured: the SSB filter was set in the rig's CW mode (FW2000) and FR1;MD;FR0 made the
+    receiver twitch."""
+    from anyrig.common.state import State
+    from anyrig.local.sync import Sync
+
+    async def body():
+        state, link = State(), _FakeLink()
+        s = Sync(state, link)
+        for k, v in (("freq_a", 14015000), ("freq_b", 14000000), ("mode", "CW"), ("mode_b", "USB"),
+                     ("filter_bw", 250), ("split", False)):
+            state.set(k, v, "kx2")                   # first readings
+        s.ready = True
+        link.sent.clear()
+        state.set("freq_a", 14000000, "kx2")        # A/B tapped
+        state.set("freq_b", 14015000, "kx2")
+        state.set("filter_bw", 2000, "kx2")         # AI bundle, before the mode
+        state.set("mode_b", "CW", "kx2")
+        await asyncio.sleep(0.2)
+        state.set("mode", "USB", "kx2")             # poll answer
+        await asyncio.sleep(0.05)
+        keys = [m["k"] for m in link.sent]
+        assert keys == ["freq_a", "freq_b", "mode", "filter_bw"]
+        assert link.sent[-1]["v"] == 2000
+        link.sent.clear()
+        state.set("split", True, "wintest")         # split on: now VFO B mode is needed
+        assert [m["k"] for m in link.sent] == ["split", "mode_b"]
+    asyncio.run(body())
