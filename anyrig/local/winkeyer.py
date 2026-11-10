@@ -4,6 +4,13 @@ Win-Test talks to this as it would to a real WinKeyer on COM2. Text is forwarded
 (keyed there by its internal keyer, Kenwood KY), the speed goes to the rig's keyer, "clear buffer"
 (ESC in Win-Test) aborts at once. Status bytes tell Win-Test when the keyer is busy.
 
+Measured (Win-Test, 10 Nov 2026): with serial echo on (mode register 0x94) Win-Test sends a
+message **one character at a time** and sends the next one only after the echo of the previous
+one. A real WinKeyer echoes a character when it takes it from its buffer, i.e. while the previous
+one is still being keyed. Here the rig keys with network latency, so every character is echoed
+**at once**; Win-Test then streams the whole message and the remote side joins it into KY packets.
+"Busy" stays set until the remote reports the text as keyed.
+
 Every byte from and to Win-Test is written to the traffic log, so the exact command set Win-Test
 uses can be checked against a real hardware test.
 
@@ -14,10 +21,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Callable
 
-from ..common import morse
 from ..common.log import TrafficLog
 from ..common.serialport import PtyPort
 
@@ -96,8 +101,6 @@ class WinKeyerEmulator:
         self._buf = bytearray()
         self._text = ""
         self._flush: asyncio.TimerHandle | None = None
-        self._echo_task: asyncio.Task | None = None
-        self._echo_queue: list[str] = []
         self.commands_seen: dict[str, int] = {}
 
     @property
@@ -110,8 +113,6 @@ class WinKeyerEmulator:
         log.info("Win-Test WinKeyer port: %s -> %s", self.port.link, self.port.slave_name)
 
     async def stop(self) -> None:
-        if self._echo_task:
-            self._echo_task.cancel()
         self.port.close()
 
     # ------------------------------------------------------------------ output to Win-Test
@@ -201,7 +202,6 @@ class WinKeyerEmulator:
                 self.on_speed(wpm)
         elif cmd == 0x0A:                               # clear buffer = abort (ESC)
             self._text = ""
-            self._echo_queue.clear()
             if self._flush:
                 self._flush.cancel()
             self.on_abort()
@@ -224,7 +224,7 @@ class WinKeyerEmulator:
             self._send(bytes([0x80]), "speed pot")
         elif cmd == 0x1B:                               # merge letters -> prosign character
             pair = (chr(args[0]) + chr(args[1])).upper()
-            self._add_text(MERGE_TO_PROSIGN.get(pair, pair))
+            self._add_text(MERGE_TO_PROSIGN.get(pair, pair), echo=pair)
         elif cmd == 0x08:                               # backspace: remove last unsent char
             self._text = self._text[:-1]
         elif cmd == 0x1C:
@@ -232,9 +232,11 @@ class WinKeyerEmulator:
         else:
             log.debug("WinKeyer command %s %s accepted", name, args.hex())
 
-    def _add_text(self, ch: str) -> None:
+    def _add_text(self, ch: str, echo: str | None = None) -> None:
         self._text += ch.upper()
         self.set_busy(True)
+        if self.echo_enabled:                           # Win-Test waits for it before the next char
+            self._send((echo if echo is not None else ch).encode("latin-1"), "echo")
         if self._flush:
             self._flush.cancel()
         loop = asyncio.get_running_loop()
@@ -244,26 +246,6 @@ class WinKeyerEmulator:
         text, self._text = self._text, ""
         if text:
             self.on_text(text)
-            if self.echo_enabled:
-                self._echo(text)
-
-    # ------------------------------------------------------------------ echo (estimated timing)
-    def _echo(self, text: str) -> None:
-        self._echo_queue.append(text)
-        if not self._echo_task or self._echo_task.done():
-            self._echo_task = asyncio.create_task(self._echo_run())
-
-    async def _echo_run(self) -> None:
-        start = time.monotonic()
-        t = 0.0
-        while self._echo_queue:
-            text = self._echo_queue.pop(0)
-            for ch in text:
-                t += morse.duration(ch, self.wpm or 25) + 3 * 1.2 / (self.wpm or 25)
-                await asyncio.sleep(max(0.0, start + t - time.monotonic()))
-                if not self.busy:
-                    return
-                self._send(ch.encode("latin-1"), "echo")
 
     def done(self) -> None:
         """Remote finished keying everything we sent."""

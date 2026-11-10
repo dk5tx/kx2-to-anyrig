@@ -7,6 +7,11 @@ Measured TS-590SG behaviour (docs/measurements.md):
 - KY; answers KY0 (buffer has room) or KY1 (full); the buffer holds more than one packet.
 - KY0; aborts: the current element is finished, nothing more is keyed.
 
+Text arrives in pieces (Win-Test sends one character at a time). Packets are therefore only
+cut **inside a word**: the last character(s) are held back until the next text arrives, so a
+word gap always lies inside a packet. A piece that cannot be cut that way is sent when no more
+text came for ``hold_ms`` or when the rig is about to run out of text.
+
 "Done" is reported when the text should have been keyed completely (Morse timing at the rig's
 keyer speed). That is what Win-Test needs for its busy indicator and CQ repeat; the break-in hang
 time of the rig is not waited for.
@@ -34,8 +39,18 @@ DEFAULTS = {
     "abort": "KY0;",
     "poll_ms": 50,
     "start_delay_ms": 15,               # measured: command -> TX0 11-16 ms
+    "lead_ms": 300,                     # hand the next packet to the rig this long before it runs dry
+    "hold_ms": 150,                     # no more text for this long: send the rest as it is
     "allowed": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /?.,=+-'():\"@[_<#>]\\%",
 }
+
+
+def inner_cut(text: str, maxlen: int) -> int:
+    """Largest p <= maxlen, p < len(text), with text[:p] / text[p:] cut inside a word; 0 if none."""
+    for p in range(min(maxlen, len(text) - 1), 0, -1):
+        if text[p] != " " and text[p - 1] != " ":
+            return p
+    return 0
 
 
 def split_packet(text: str, maxlen: int) -> tuple[str, str]:
@@ -71,6 +86,7 @@ class CWSender:
         self._reply: asyncio.Future | None = None
         self._task: asyncio.Task | None = None
         self._last_char_sent = ""
+        self._last_input = 0.0
         self.packets: list[str] = []
         self.blocked = False                # set by safety (link lost) until a new connection
 
@@ -102,6 +118,7 @@ class CWSender:
             # by the rig at the start of a packet; nothing better can be done than to log it
             log.info("word gap at packet start will be lost (text typed after the previous word)")
         self._pending += clean
+        self._last_input = time.monotonic()
         if msg_id is not None:
             self._ids.append(msg_id)
         self._wake.set()
@@ -136,15 +153,31 @@ class CWSender:
     async def _run(self) -> None:
         maxlen = int(self.cfg["packet_len"])
         poll = self.cfg["poll_ms"] / 1000.0
+        lead = self.cfg["lead_ms"] / 1000.0
+        hold = self.cfg["hold_ms"] / 1000.0
         while True:
             now = time.monotonic()
+            # the rig drops a space at the start of a packet
+            self._pending = self._pending.lstrip(" ")
             if self._pending:
-                if self.packets and now < self._est_end - 0.3 and not await self._buffer_free():
+                text = self._pending
+                needed = now >= self._est_end - lead          # rig runs dry soon (or is idle)
+                if len(text) > maxlen:
+                    chunk, rest = split_packet(text, maxlen)
+                elif needed and inner_cut(text, maxlen):
+                    p = inner_cut(text, maxlen)
+                    chunk, rest = text[:p], text[p:]          # keep the tail for the next piece
+                elif now - self._last_input >= hold:
+                    chunk, rest = text.rstrip(" "), ""       # no more text coming: send it all
+                else:
+                    wake = self._last_input + hold
+                    if not needed:
+                        wake = min(wake, self._est_end - lead)
+                    await self._wait(max(0.002, wake - now))
+                    continue
+                if self.packets and now < self._est_end - lead and not await self._buffer_free():
                     await asyncio.sleep(poll)
                     continue
-                # the rig drops a space at the start of a packet; split_packet() never leaves one
-                # in the rest, so only text appended later can start with a space
-                chunk, rest = split_packet(self._pending.lstrip(" "), maxlen)
                 self._pending = rest
                 if chunk:
                     self.rig.send_raw(self.cfg["packet"].format(text=chunk.ljust(maxlen)))
@@ -159,9 +192,11 @@ class CWSender:
             if self._ids and now >= self._est_end:
                 self._finish()
                 continue
-            self._wake.clear()
-            timeout = max(0.005, self._est_end - now) if self._ids else None
-            try:
-                await asyncio.wait_for(self._wake.wait(), timeout)
-            except asyncio.TimeoutError:
-                pass
+            await self._wait(max(0.005, self._est_end - now) if self._ids else None)
+
+    async def _wait(self, timeout: float | None) -> None:
+        self._wake.clear()
+        try:
+            await asyncio.wait_for(self._wake.wait(), timeout)
+        except asyncio.TimeoutError:
+            pass

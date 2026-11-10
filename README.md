@@ -79,7 +79,8 @@ wine reg add 'HKLM\Software\Wine\Ports' /v COM2 /t REG_SZ /d /tmp/anyrig-com2 /f
 ```
 In Win-Test: Options → Configure Interfaces → COM2 = **WinKeyer** (no CW/PTT on COM1).
 
-- F1–F8 macros start at once (text is sent per word / after 20 ms idle).
+- F1–F8 macros start at once. Win-Test sends one character at a time and waits for its echo;
+  the emulation echoes at once, the remote side joins the characters into `KY` packets.
 - Speed keys (PgUp/PgDn) set `KS` on the rig and on the KX2 (the KX2 shows at most 50 WPM).
 - ESC sends `KY0;`: keying stops after the current element.
 - `KY` packets are cut inside words, never at a word gap (the rig drops a space at the start of a

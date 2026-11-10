@@ -186,3 +186,39 @@ def test_cw_blocked_after_link_loss_until_reconnect(tmp_path):
             await s.wk.stop()
             await s.stop()
     run(body())
+
+
+def test_wintest_char_by_char_with_echo(tmp_path):
+    """Measured Win-Test behaviour: mode 0x94 (echo on), then one character per echo."""
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim(time_scale=0.05) as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            wt.send(b"\x0e\x94\x0a\x02\x3c")                   # mode (echo), clear, 60 WPM
+            assert await wait_for(lambda: rsim.raw["KS"] == "060", 1.0)
+            text = "599 001 CQ DK5TX DK5TX TEST"
+            t0 = time.monotonic()
+            got = b""
+            for i, ch in enumerate(text.encode()):
+                wt.send(bytes([ch]))
+                while True:                                    # wait for this character's echo
+                    b = await wt.read(1, timeout=0.5)
+                    assert b, "no echo for %r" % chr(ch)
+                    if b < b"\xc0":
+                        break
+                got += b
+                if i == 0:
+                    assert time.monotonic() - t0 < 0.05        # echo comes at once
+                await asyncio.sleep(0.03)                      # Win-Test's own pacing
+            assert got == text.encode()
+            assert await wait_for(lambda: rsim.tx, 0.5)
+            for _ in range(200):
+                if (await wt.read(1, timeout=0.1)) == b"\xc0":
+                    break
+            assert rsim.sent_text == text                      # no gap lost, none inserted
+            packets = [p.rstrip(" ") for p in rsim.packets]    # strip the padding
+            assert all(not p.startswith(" ") for p in packets)
+            assert "".join(packets) == text                     # word gaps only inside packets
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())
