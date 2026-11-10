@@ -222,3 +222,74 @@ def test_wintest_char_by_char_with_echo(tmp_path):
             await s.wk.stop()
             await s.stop()
     run(body())
+
+
+async def wt_send(wt, text: bytes, first: bytes = b"\x0a", timeout=5.0):
+    """Like Win-Test: clear + first character, then one character per echo. Returns echo times."""
+    times = []
+    for i, ch in enumerate(text):
+        wt.send((first if i == 0 else b"") + bytes([ch]))
+        while True:
+            b = await wt.read(1, timeout=timeout)
+            assert b, "no echo for %r" % chr(ch)
+            if b < b"\xc0":
+                break
+        times.append(time.monotonic())
+        await asyncio.sleep(0.05)
+    return times
+
+
+def test_cq_repeat_keeps_the_interval(tmp_path):
+    """Win-Test's CQ repeat ('clear' + text, a fixed time after the last echo) must neither cut
+    the running CQ nor shorten the pause: Win-Test sees the message as sent about a word early."""
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim(time_scale=1.0) as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            wt.send(b"\x0e\xb4\x02\x30")                       # echo on, 48 WPM
+            assert await wait_for(lambda: rsim.raw["KS"] == "048", 1.0)
+            msg, interval, gaps = b"CQ DL1ABC TEST", 1.2, []
+            done = None
+            for cycle in range(3):
+                echoes = await wt_send(wt, msg, timeout=5.0)
+                if done is not None:
+                    gaps.append(echoes[0] - done)
+                # Win-Test: repeat 'interval' after the last echo; the rig is still keying then
+                next_at = echoes[-1] + interval
+                st = b""
+                while time.monotonic() < next_at:
+                    b = await wt.read(1, timeout=max(0.01, next_at - time.monotonic()))
+                    if b == b"\xc0":
+                        done = time.monotonic()
+                await asyncio.sleep(max(0.0, next_at - time.monotonic()))
+            assert "KY0" not in rsim.received                  # no CQ was cut
+            assert await wait_for(lambda: not rsim.tx, 8.0)
+            assert rsim.sent_text.split() == (msg.decode() + " ") .split() * 3
+            # from the second repeat on, the pause after the rig's end is Win-Test's interval
+            assert abs(gaps[-1] - interval) < 0.2, gaps
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())
+
+
+def test_keyboard_mode_typing_is_appended(tmp_path):
+    """Keyboard mode: 'clear' + character for every key while the rig still keys."""
+    async def body():
+        with KX2Sim(reply_delay=0.005) as ksim, TS590Sim(time_scale=1.0) as rsim:
+            s, wt = await cw_stack(tmp_path, ksim, rsim)
+            wt.send(b"\x0e\xb4\x02\x1e")                       # echo on, 30 WPM
+            assert await wait_for(lambda: rsim.raw["KS"] == "030", 1.0)
+            for ch in b"TEST 73":                              # typed faster than keyed
+                await wt_send(wt, bytes([ch]))
+                await asyncio.sleep(0.05)                      # ~10 keys per second
+            await asyncio.sleep(3.0)
+            # nothing lost, nothing aborted; only the first letter may stand alone (the rig was
+            # idle, nobody knows yet that a word follows)
+            assert rsim.sent_text.replace(" ", "") == "TEST73"
+            assert rsim.sent_text.split()[-1] == "73"
+            assert len(rsim.sent_text.split()) <= 3
+            assert "KY0" not in rsim.received
+            wt.close()
+            await s.wk.stop()
+            await s.stop()
+    run(body())

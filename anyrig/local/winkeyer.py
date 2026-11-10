@@ -10,10 +10,21 @@ one (about 55 ms later). It treats the message as sent when the last echo has co
 then starts (with "clear buffer" first) after the repeat interval.
 
 Pacing of the echo: the remote side can only key complete words (KY padding = word gap), so
-Win-Test must stay ahead of the keying, but not much more, or it thinks the message is over too
-early. The characters of word k are echoed once word k-1 is (estimated to be) keyed at the rig;
-the first two words and every space are echoed at once. The estimate uses the same Morse timing
-as the remote side. "Busy" stays set until the remote reports the text as keyed.
+Win-Test must stay ahead of the keying, but not much more. The characters of word k are echoed
+from ``margin`` before the end of word k-1 at the rig (estimate with the same Morse timing as the
+remote side); the first word and every space are echoed at once. "Busy" stays set until the
+remote reports the text as keyed.
+
+Win-Test therefore sees a message as sent about one word before the rig has keyed it. Measured
+(10 Nov 2026), Win-Test sends "clear buffer" plus new text in one write whenever it believes the
+keyer is idle: at a CQ repeat (after the repeat interval) and in keyboard mode (Alt+K) before
+each typed character. A real ESC is a "clear buffer" without text. So "clear + text" while the
+rig is still keying is not an abort:
+- coming shortly after the last echo (typing in keyboard mode): the text is appended;
+- coming later (CQ repeat): the new message waits until the rig has finished, plus the same pause
+  Win-Test waited after the last echo, so the repeat interval is kept.
+"Clear + text" while Win-Test is still sending (an echo outstanding) is an interruption, e.g.
+another F key: abort and start the new message, as a real WinKeyer does.
 
 Every byte from and to Win-Test is written to the traffic log, so the exact command set Win-Test
 uses can be checked against a real hardware test.
@@ -113,7 +124,16 @@ class WinKeyerEmulator:
         self._flush: asyncio.TimerHandle | None = None
         # echo pacing: complete words [(text, complete_time)], word being received, held echo
         self.latency = 0.05             # estimated time from complete word to keying start [s]
-        self.margin = 0.3               # echo the next word this long before the previous starts
+        self.margin = 0.6               # echo the next word this long before the previous one ends
+        self.append_s = 0.5             # clear+text this soon after the last echo: append (typing)
+        self.pace_s = 0.05              # Win-Test sends the next character within this after an echo
+        self._done_at = 0.0             # when the remote reported the last message as keyed
+        self._prev_pause: float | None = None
+        self._last_echo = 0.0
+        self._complete = False          # Win-Test has nothing more to send (end mark sent)
+        self._defer: float | None = None        # pause of a deferred CQ repeat [s]
+        self._defer_text: list[tuple[str, str | None]] = []
+        self._defer_timer: asyncio.TimerHandle | None = None
         self._words: list[tuple[str, float]] = []
         self._cur = ""
         self._cur_since = 0.0
@@ -130,6 +150,9 @@ class WinKeyerEmulator:
         log.info("Win-Test WinKeyer port: %s -> %s", self.port.link, self.port.slave_name)
 
     async def stop(self) -> None:
+        for h in (self._held, self._end_timer, self._defer_timer, self._flush):
+            if h:
+                h.cancel()
         self.port.close()
 
     # ------------------------------------------------------------------ output to Win-Test
@@ -183,6 +206,10 @@ class WinKeyerEmulator:
                 if len(buf) < 1 + n:
                     return
                 args = bytes(buf[1:1 + n])
+                if b == 0x0A:                           # clear: does text follow in this write?
+                    self._clear(any(x >= 0x20 for x in buf[1:]))
+                    del buf[:1]
+                    continue
                 del buf[:1 + n]
                 self._command(b, args)
                 continue
@@ -217,16 +244,8 @@ class WinKeyerEmulator:
             if wpm and wpm != self.wpm:
                 self.wpm = wpm
                 self.on_speed(wpm)
-        elif cmd == 0x0A:                               # clear buffer = abort (ESC)
-            self._text = ""
-            self._reset_words()
-            if self._end_timer:
-                self._end_timer.cancel()
-                self._end_timer = None
-            if self._flush:
-                self._flush.cancel()
-            self.on_abort()
-            self.set_busy(False)
+        elif cmd == 0x0A:
+            self._clear(False)
         elif cmd == 0x0E:                               # mode register
             self.mode = args[0]
             self.echo_enabled = bool(self.mode & 0x04)  # bit 2: serial echo back
@@ -253,7 +272,79 @@ class WinKeyerEmulator:
         else:
             log.debug("WinKeyer command %s %s accepted", name, args.hex())
 
+    def _clear(self, text_follows: bool) -> None:
+        """WinKeyer "clear buffer": ESC, or Win-Test starting a new message (see module doc)."""
+        self._seen("clear")
+        now = time.monotonic()
+        pause = now - self._last_echo
+        # Win-Test sends the next character ~55 ms after an echo; "clear + text" instead, with no
+        # echo outstanding, means Win-Test had nothing more to send (keyboard mode, CQ repeat)
+        finished = self._held is None and (self._complete or pause > self.pace_s)
+        repeat = text_follows and self._is_repeat(pause)
+        if text_follows and self.busy and self._defer is None and finished:
+            if pause < self.append_s and not repeat:
+                log.debug("clear+text %.2f s after the last echo: appended (keyboard mode)", pause)
+                self._complete = False
+                return
+            log.info("CQ repeat while the rig is still keying: starts %.1f s after the end", pause)
+            self._defer = pause
+            self._defer_text = []
+            return
+        if text_follows and not self.busy:
+            # a new message while the rig is (estimated to be) idle: no KY0, it could cut the
+            # last element of the previous message if the estimate was a little early
+            self._abort(send=False)
+            if repeat and self._done_at > self._last_echo:
+                # CQ repeat: Win-Test counted its interval from the last echo, which came
+                # (done - last echo) before the rig finished -> wait that much longer
+                wait = self._done_at + pause - now
+                if wait > 0.02:
+                    log.info("CQ repeat: waiting %.1f s more to keep the interval", wait)
+                    self._defer = 0.0
+                    self._defer_text = []
+                    self._defer_timer = asyncio.get_running_loop().call_later(
+                        wait, self._start_deferred)
+                    self.set_busy(True)
+            return
+        self._abort()
+
+    def _is_repeat(self, pause: float) -> bool:
+        """A CQ repeat comes the same time after the last echo every time."""
+        prev = self._prev_pause
+        self._prev_pause = pause
+        return prev is not None and pause >= self.append_s and abs(pause - prev) < 0.25
+
+    def _abort(self, send: bool = True) -> None:
+        self._text = ""
+        self._reset_words()
+        self._complete = False
+        self._defer = None
+        self._defer_text = []
+        if self._defer_timer:
+            self._defer_timer.cancel()
+            self._defer_timer = None
+        if self._end_timer:
+            self._end_timer.cancel()
+            self._end_timer = None
+        if self._flush:
+            self._flush.cancel()
+        if send:
+            self.on_abort()
+        self.set_busy(False)
+
+    def _start_deferred(self) -> None:
+        self._defer_timer = None
+        chars, self._defer_text = self._defer_text, []
+        self._defer = None
+        self._reset_words()
+        for ch, echo in chars:
+            self._add_text(ch, echo)
+
     def _add_text(self, ch: str, echo: str | None = None) -> None:
+        if self._defer is not None:                     # CQ repeat waits for the rig
+            self._defer_text.append((ch, echo))
+            return
+        self._complete = False
         if self._end_timer:
             self._end_timer.cancel()
             self._end_timer = None
@@ -306,8 +397,9 @@ class WinKeyerEmulator:
         self._cur += ch
         k = len(self._words)                            # index of the word being received
         due = 0.0
-        if k >= 2:
-            due = self.word_starts()[k - 1] - self.margin
+        if k >= 1:                                      # word k must be complete before k-1 ends
+            text, _ = self._words[k - 1]
+            due = self.word_starts()[k - 1] + morse.duration(text, self.wpm or 25) - self.margin
         if due <= now:
             self._echo_now(data)
         else:
@@ -321,6 +413,7 @@ class WinKeyerEmulator:
     def _echo_now(self, data: bytes) -> None:
         """Send an echo; if Win-Test sends no further character, the message is complete."""
         self._send(data, "echo")
+        self._last_echo = time.monotonic()
         if self.on_end:
             if self._end_timer:
                 self._end_timer.cancel()
@@ -328,11 +421,18 @@ class WinKeyerEmulator:
 
     def _message_end(self) -> None:
         self._end_timer = None
+        self._complete = True
         if self._flush:
             self._flush.cancel()
         self._flush_text(end=True)
 
     def done(self) -> None:
         """Remote finished keying everything we sent."""
+        if self._defer is not None:
+            if not self._defer_timer:                   # CQ repeat: keep Win-Test's pause
+                self._defer_timer = asyncio.get_running_loop().call_later(
+                    self._defer, self._start_deferred)
+            return
         if not self._text:
+            self._done_at = time.monotonic()
             self.set_busy(False)

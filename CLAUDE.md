@@ -89,7 +89,10 @@ kx2-local pty and the "CW"/"PTT" options on COM1 must be **off** (a pty has no m
 - Lua scripts send arbitrary strings through the same port (`wtRadio:Send("CA1;")`).
 - WinKeyer (M4 hardware test, 10 Nov 2026): Win-Test sets mode 0x94/0x95 (serial echo) and sends a message
   **one character per echo** (~55 ms after each echo), framed by `0A 02 nn` (clear, speed) and `02 00`.
-  It considers the message sent at the last echo; a CQ repeat starts with `0A` after the repeat interval.
+  It considers the message sent at the last echo; a CQ repeat starts with `0A`+text the repeat interval after
+  the last echo (also while the keyer is still busy). Keyboard mode (Alt+K) sends `0A`+char for every key once
+  all echoes are in. ESC = `0A` without text. → `0A`+text with no echo outstanding is not an abort
+  (`local/winkeyer.py`: append when typing, CQ repeat waits for the rig's end + Win-Test's pause).
 - Captured with kx2-local (M1, 9 Nov 2026) – Win-Test only ever sends these set commands:
   spot click `FA…;MD3;FT0;` · direct entry (e.g. "14025") `FA…;MD3;` · spot to VFO B `FB…;MD$3;` ·
   split on with QSX `FB…;FT1;` · split off `FT0;`. **M1 accepted on hardware.**

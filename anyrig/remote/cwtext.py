@@ -42,6 +42,7 @@ DEFAULTS = {
     "poll_ms": 50,
     "start_delay_ms": 15,               # measured: command -> TX0 11-16 ms
     "lead_ms": 300,                     # ask KY; only if the rig still has this much to key
+    "final_lead_ms": 60,                # send the marked last word this long before the rig is idle
     # safety net only: no end mark and no text for this long -> send the last word. Must be longer
     # than the local side holds an echo back (up to one word at slow speed; 10 Nov 2026 a 3 s value
     # split "TEST" into "T" + "EST" because the echo of "T" was held for 3.1 s)
@@ -156,10 +157,17 @@ class CWSender:
             # the rig drops a space at the start of a packet
             self._pending = self._pending.lstrip(" ")
             if self._pending:
-                final = self._end or now - self._last_input >= hold
+                # the marked last word is held until the rig needs it: in keyboard mode more
+                # characters of the same word may still follow
+                final_lead = self.cfg["final_lead_ms"] / 1000.0
+                final = (self._end and now >= self._est_end - final_lead) \
+                    or now - self._last_input >= hold
                 nxt = next_packet(self._pending, maxlen, final)
                 if nxt is None:
-                    await self._wait(max(0.002, self._last_input + hold - now))
+                    wake = self._last_input + hold
+                    if self._end:
+                        wake = min(wake, self._est_end - final_lead)
+                    await self._wait(max(0.002, wake - now))
                     continue
                 if self.packets and now < self._est_end - lead and not await self._buffer_free():
                     await asyncio.sleep(poll)
