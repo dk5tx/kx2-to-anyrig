@@ -360,6 +360,9 @@ prosign map, mode-dependent commands, capabilities, ignore list (`RS`).
 - **M4 WinKeyer emulation + KY**: Acceptance: Win-Test F1–F8 macros, speed keys and ESC work; no lost word spaces.
   **Accepted on hardware 10 Nov 2026** (26 WPM: clean gaps, CQ repeat 3.0 s → 3.04–3.15 s after keying end,
   ESC, speed keys, keyboard mode).
+  **DTR keying** (`cw.method: dtr`, `remote/dtrkeyer.py`) accepted the same evening at 26 and 32 WPM: exact element
+  timing (C→Q 648 ms, word gap 323 ms at 26 WPM), echo late in the character (`echo_budget_ms` 220) so Win-Test
+  completes a call typed while sending (DL [Ins] 1XYZ). Echo delivery over WLAN: median 7 ms, p99 19 ms, max 100 ms.
 - **M5 Audio**: Acceptance: sidetone and RX audio on the laptop, measured latency documented, AF knob = volume.
 - **M6 Web UI + safety**: meters, buttons, watchdog/TX timeout tests (pull the network cable → TX stops ≤ 1 s).
 - **M7 Packaging & docs**: install guide (apt packages, dialout group, Wine COM links, Win-Test settings), systemd user
