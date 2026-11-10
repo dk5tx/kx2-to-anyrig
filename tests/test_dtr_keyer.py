@@ -132,7 +132,8 @@ def test_ptt_lead_tail_and_buffered_speed():
         assert ev[1][0] - ev[0][0] >= 0.039
         assert ev[-1][1:] == ("ptt", False)
         last_up = [t for t, w, on in ev if w == "key" and not on][-1]
-        assert 0.095 < ev[-1][0] - last_up < 0.15
+        # PTT is held through a character gap plus the grace time (more text may still come)
+        assert 0.2 < ev[-1][0] - last_up < 0.3
         marks = line.marks()
         assert abs(marks[0][1] - 0.06) < 0.006 and abs(marks[-1][1] - 0.03) < 0.006   # 20 -> 40 WPM
         await k.stop()
@@ -225,4 +226,23 @@ def test_dtr_esc_and_safety(tmp_path):
             wt.close()
             await s.wk.stop()
             await s.stop()
+    run(body())
+
+
+def test_ptt_and_busy_held_through_word_gap_while_text_trickles_in():
+    """Measured: Win-Test sends the next character ~55 ms after the echo; with a 20 ms PTT tail
+    the PTT dropped in every word gap and the rig went to RX in the middle of a CQ."""
+    async def body():
+        k, line, done, echo = await keyer(26, ptt=True, ptt_lead_ms=10, ptt_tail_ms=20)
+        for ch in "CQ DL1AB":                          # one character per echo, like Win-Test
+            n = len(echo)
+            k.send(ch, None)
+            assert await wait_for(lambda: len(echo) > n, 2.0)
+            await asyncio.sleep(0.07)                  # 55 ms + network
+        k.send("", 1)
+        assert await wait_for(lambda: done == [1], 4.0)
+        ptt = [(t, on) for t, w, on in line.events if w == "ptt"]
+        assert ptt[0][1] and len(ptt) == 2             # on once, off once at the end
+        assert line.text(26) == "CQ DL1AB"
+        await k.stop()
     run(body())

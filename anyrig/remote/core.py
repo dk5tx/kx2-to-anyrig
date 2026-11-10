@@ -44,7 +44,8 @@ class RemoteServer:
                 kl = cfg["keyline"]
                 keyline = KeyLine(kl["port"], kl.get("key", "dtr"), kl.get("ptt") or None)
             self.cw = DTRKeyer(keyline, lambda: rig.state.get("keyer_wpm"), cfg.get("cw"),
-                               on_done=self._cw_done, on_echo=self._cw_echo)
+                               on_done=self._cw_done, on_echo=self._cw_echo,
+                               traffic=getattr(rig, "traffic", None))
         else:
             self.cw = CWSender(rig, rig.profile.get("cw"), on_done=self._cw_done)
         rig.on_raw = self.cw.on_raw

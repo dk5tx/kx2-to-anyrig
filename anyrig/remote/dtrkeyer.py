@@ -32,7 +32,11 @@ DEFAULTS = {
     "ptt_lead_ms": 10,          # PTT (RTS) before the first element (Win-Test sends its own value)
     "ptt_tail_ms": 20,          # PTT held after the last element
     "word_gap_units": 7,
-    "done_after_units": 3,      # report "done" when nothing new came within a character gap
+    # Win-Test sends the next character only after the echo (~55 ms) plus the network: the queue is
+    # often empty during a character or word gap. Only after the gap plus this grace time the
+    # message is over: then "done" is reported and PTT dropped (10 Nov 2026: PTT dropped in a
+    # word gap after 20 ms tail -> the rig went to RX in the middle of a CQ).
+    "idle_grace_ms": 150,
     "max_key_down_s": 5.0,      # safety: no element is longer than this
 }
 
@@ -40,12 +44,13 @@ DEFAULTS = {
 class DTRKeyer:
     def __init__(self, line: Any, wpm: Callable[[], float], cfg: dict | None = None,
                  on_done: Callable[[list[Any]], None] | None = None,
-                 on_echo: Callable[[str], None] | None = None):
+                 on_echo: Callable[[str], None] | None = None, traffic: Any = None):
         self.line = line
         self.wpm_fn = wpm
         self.cfg = dict(DEFAULTS, **(cfg or {}))
         self.on_done = on_done
         self.on_echo = on_echo
+        self.traffic = traffic                  # TrafficLog: "KEY>" line per character (timing)
         self.blocked = False
         self.retries = 0                        # interface of CWSender (unused here)
         self.chars_keyed = 0
@@ -166,8 +171,9 @@ class DTRKeyer:
                     if item is None:
                         now = time.monotonic()
                         unit = 1.2 / self._wpm()
-                        done_at = last_end + self.cfg["done_after_units"] * unit
-                        tail_at = last_end + self.cfg["ptt_tail_ms"] / 1000.0
+                        done_at = max(last_end + 3 * unit, next_start) \
+                            + self.cfg["idle_grace_ms"] / 1000.0
+                        tail_at = max(done_at, last_end + self.cfg["ptt_tail_ms"] / 1000.0)
                         if self._ids and now >= done_at:
                             ids, self._ids = self._ids, []
                             self._call(self.on_done, ids)
@@ -191,6 +197,8 @@ class DTRKeyer:
                 if item == " ":
                     # word gap: the next character starts 7 units after the last element
                     next_start = max(next_start, last_end + self.cfg["word_gap_units"] * unit)
+                    if self.traffic:
+                        self._call(self.traffic.write, "KEY>", "(space)")
                     self._call(self.on_echo, item)
                     continue
                 code = morse.CODE.get(item)
@@ -206,6 +214,11 @@ class DTRKeyer:
                 if not self._sleep_until(start):
                     continue
                 self._call(self.on_echo, item)
+                if self.traffic:
+                    # "late": the character came after its gap had already ended (waiting for text)
+                    late = (start - next_start) * 1000 if next_start else 0.0
+                    self._call(self.traffic.write, "KEY>", item,
+                               "%.0f WPM%s" % (self._wpm(), ", late %.0f ms" % late if late > 2 else ""))
                 t = time.monotonic()
                 ok = True
                 for i, el in enumerate(code):
