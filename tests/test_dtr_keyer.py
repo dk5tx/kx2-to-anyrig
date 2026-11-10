@@ -246,3 +246,20 @@ def test_ptt_and_busy_held_through_word_gap_while_text_trickles_in():
         assert line.text(26) == "CQ DL1AB"
         await k.stop()
     run(body())
+
+
+def test_echo_comes_late_in_the_character():
+    """Win-Test takes the next character from the entry field after the echo: echo as late as the
+    budget allows (char + gap - budget), so a call typed while sending is completed."""
+    async def body():
+        line = FakeLine()
+        echo_t = []
+        k = DTRKeyer(line, lambda: 20, {"echo_budget_ms": 220},
+                     on_echo=lambda ch: echo_t.append(time.monotonic()))
+        k.start()
+        k.send("O", 1)                                  # 11 units + 3 gap at 20 WPM = 0.84 s
+        assert await wait_for(lambda: echo_t, 2.0)
+        first_down = line.marks()[0][0]
+        assert abs(echo_t[0] - first_down - (0.84 - 0.22)) < 0.02
+        await k.stop()
+    run(body())

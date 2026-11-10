@@ -37,6 +37,11 @@ DEFAULTS = {
     # message is over: then "done" is reported and PTT dropped (10 Nov 2026: PTT dropped in a
     # word gap after 20 ms tail -> the rig went to RX in the middle of a CQ).
     "idle_grace_ms": 150,
+    # When a character is echoed: as late as possible, so Win-Test takes the next character from
+    # the entry field late (completing a call typed while sending: DL [Ins] 1XYZ), but early enough
+    # that the next character is here before the character gap ends. Budget = Win-Test's ~55 ms +
+    # network round trip incl. jitter (WLAN: ~130 ms jitter measured 10 Nov 2026).
+    "echo_budget_ms": 220,
     "max_key_down_s": 5.0,      # safety: no element is longer than this
 }
 
@@ -62,6 +67,7 @@ class DTRKeyer:
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._buffered_wpm: float | None = None    # WinKeyer buffered speed (++/--)
+        self._echo_pending: tuple[float, str] | None = None
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -140,14 +146,25 @@ class DTRKeyer:
         if ids:
             self._call(self.on_done, ids)
 
+    def _fire_echo(self) -> None:
+        if self._echo_pending:
+            _, item = self._echo_pending
+            self._echo_pending = None
+            self._call(self.on_echo, item)
+
     def _sleep_until(self, t: float) -> bool:
-        """Precise wait; False if aborted."""
+        """Precise wait (also sends a due echo); False if aborted."""
         while True:
             if self._abort.is_set():
                 return False
-            d = t - time.monotonic()
+            now = time.monotonic()
+            if self._echo_pending and now >= self._echo_pending[0]:
+                self._fire_echo()
+            d = t - now
             if d <= 0:
                 return True
+            if self._echo_pending:
+                d = min(d, max(0.0, self._echo_pending[0] - now) + 0.003)
             if d > 0.003:
                 self._abort.wait(d - 0.002)
             else:
@@ -213,10 +230,12 @@ class DTRKeyer:
                     start = max(start, time.monotonic() + self.cfg["ptt_lead_ms"] / 1000.0)
                 if not self._sleep_until(start):
                     continue
-                self._call(self.on_echo, item)
+                units = morse.char_units(item)
+                self._echo_pending = (max(start, start + (units + 3) * unit
+                                          - self.cfg["echo_budget_ms"] / 1000.0), item)
                 if self.traffic:
                     # "late": the character came after its gap had already ended (waiting for text)
-                    late = (start - next_start) * 1000 if next_start else 0.0
+                    late = (start - next_start) * 1000 if next_start and start - next_start < 2 else 0.0
                     self._call(self.traffic.write, "KEY>", item,
                                "%.0f WPM%s" % (self._wpm(), ", late %.0f ms" % late if late > 2 else ""))
                 t = time.monotonic()
@@ -236,7 +255,9 @@ class DTRKeyer:
                     if not ok:
                         break
                 if not ok:
+                    self._echo_pending = None
                     continue
+                self._fire_echo()                           # not yet due only for short chars
                 self.chars_keyed += 1
                 last_end = t
                 next_start = last_end + 3 * unit            # character gap
