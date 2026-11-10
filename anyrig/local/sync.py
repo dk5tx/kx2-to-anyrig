@@ -140,6 +140,16 @@ class Sync:
             log.warning("no remote connection – CW %r not sent", text)
             self._cw_idle()
 
+    def cw_clear(self) -> None:
+        self.link.send({"t": "cw_clear"})
+
+    def cw_wpm(self, wpm: int) -> None:
+        self.link.send({"t": "cw_wpm", "wpm": wpm})
+
+    def cw_ptt(self, lead_ms: int, tail_ms: int) -> None:
+        self._cw_ptt = (lead_ms, tail_ms)
+        self.link.send({"t": "cw_ptt", "lead_ms": lead_ms, "tail_ms": tail_ms})
+
     def cw_end(self, text: str) -> None:
         self.cw_text(text, end=True)
 
@@ -185,9 +195,16 @@ class Sync:
             self._cw_idle()
         elif t == "meters":
             self.meters = msg
+        elif t == "cw_echo":
+            if self.winkeyer is not None:
+                self.winkeyer.echo(str(msg.get("c", "")))
         elif t == "hello":
             self.remote_info = msg
-            log.info("remote rig: %s", msg.get("rig"))
+            log.info("remote rig: %s, CW: %s", msg.get("rig"), msg.get("cw", "text"))
+            if self.winkeyer is not None:
+                self.winkeyer.set_remote_echo(msg.get("cw") == "dtr")
+            if getattr(self, "_cw_ptt", None):
+                self.cw_ptt(*self._cw_ptt)              # Win-Test sent it before we connected
 
     def on_disconnect(self) -> None:
         self.ready = False

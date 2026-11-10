@@ -16,6 +16,7 @@ from ..common import protocol
 from ..common.protocol import Connection
 from ..drivers.base import Rig
 from .cwtext import CWSender
+from .dtrkeyer import DTRKeyer
 
 log = logging.getLogger("remote")
 
@@ -23,7 +24,7 @@ METER_INTERVAL = 0.05           # max. 20 meter messages per second
 
 
 class RemoteServer:
-    def __init__(self, cfg: dict, rig: Rig):
+    def __init__(self, cfg: dict, rig: Rig, keyline: Any = None):
         self.cfg = cfg
         self.rig = rig
         self.conn: Connection | None = None
@@ -36,7 +37,16 @@ class RemoteServer:
         self.port: int | None = None
         rig.state.subscribe(self._on_rig_change)
         rig.on_meters = self._on_meters
-        self.cw = CWSender(rig, rig.profile.get("cw"), on_done=self._cw_done)
+        self.cw_method = str((cfg.get("cw") or {}).get("method", "cat"))
+        if self.cw_method == "dtr":
+            if keyline is None:
+                from ..common.keyline import KeyLine
+                kl = cfg["keyline"]
+                keyline = KeyLine(kl["port"], kl.get("key", "dtr"), kl.get("ptt") or None)
+            self.cw = DTRKeyer(keyline, lambda: rig.state.get("keyer_wpm"), cfg.get("cw"),
+                               on_done=self._cw_done, on_echo=self._cw_echo)
+        else:
+            self.cw = CWSender(rig, rig.profile.get("cw"), on_done=self._cw_done)
         rig.on_raw = self.cw.on_raw
 
     # ------------------------------------------------------------------ lifecycle
@@ -69,7 +79,8 @@ class RemoteServer:
         self.cw.blocked = False                  # safety block ends with a new connection
         log.info("client connected: %s", conn.peer)
         conn.send({"t": "hello", "role": "remote", "version": protocol.VERSION,
-                   "rig": self.rig.profile.get("name"), "caps": sorted(self.rig.capabilities())})
+                   "rig": self.rig.profile.get("name"), "caps": sorted(self.rig.capabilities()),
+                   "cw": "dtr" if self.cw_method == "dtr" else "text"})
         for k, v in list(self.rig.state.items()):
             conn.send({"t": "state", "k": k, "v": v, "src": "rig"})
         conn.send({"t": "snapshot_done"})
@@ -104,6 +115,17 @@ class RemoteServer:
             self.cw.send(str(msg.get("text", "")), msg.get("id"), end=bool(msg.get("end")))
         elif t == "cw_abort":
             self.cw.abort()
+        elif t == "cw_clear":                    # drop queued text, finish the current character
+            clear = getattr(self.cw, "clear", None)
+            (clear or self.cw.abort)()
+        elif t == "cw_wpm":                      # WinKeyer buffered speed (++ / --), 0 = normal
+            f = getattr(self.cw, "set_buffered_wpm", None)
+            if f:
+                f(float(msg.get("wpm") or 0))
+        elif t == "cw_ptt":                      # Win-Test's PTT lead-in / tail
+            f = getattr(self.cw, "set_ptt_timing", None)
+            if f:
+                f(float(msg.get("lead_ms", 10)), float(msg.get("tail_ms", 20)))
         else:
             log.debug("unknown message %s", msg)
 
@@ -111,6 +133,10 @@ class RemoteServer:
         if self.conn:
             for i in ids:
                 self.conn.send({"t": "cw_done", "id": i})
+
+    def _cw_echo(self, ch: str) -> None:
+        if self.conn:
+            self.conn.send({"t": "cw_echo", "c": ch})
 
     def _action(self, name: str) -> None:
         spec = (self.rig.profile.get("actions") or {}).get(name)

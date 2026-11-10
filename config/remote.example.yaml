@@ -6,7 +6,11 @@ rig:
   profile: profiles/ts590sg.yaml
   port: /dev/ttyUSB1
   baud: 115200
-cw: {method: cat}                       # cat (KY) | dtr (PC generates timing)
+# CW: cat = rig keys text (Kenwood KY, word by word)
+#     dtr = anyrig keys the rig's KEY input (straight key) character by character, like a real
+#           WinKeyer: Win-Test can complete a call while you type it, ++/-- works.
+cw: {method: cat}
+# key line for method dtr; ptt: rts (amplifier) or null. PTT lead/tail come from Win-Test.
 keyline: {port: /dev/ttyUSB0, key: dtr, ptt: rts}
 audio: {source: "hw:CARD=CODEC", port: 7356, bitrate: 48000, frame_ms: 10}
 safety: {link_timeout_ms: 1000, tx_timeout_s: 60, max_power_w: 100}

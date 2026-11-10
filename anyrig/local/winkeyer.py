@@ -26,6 +26,11 @@ rig is still keying is not an abort:
 "Clear + text" while Win-Test is still sending (an echo outstanding) is an interruption, e.g.
 another F key: abort and start the new message, as a real WinKeyer does.
 
+Remote keyer mode (``remote_echo``, remote ``cw.method: dtr``): the remote keys character by
+character and reports each character when it starts (``echo()``), exactly what a real WinKeyer
+does. Text goes out at once, "clear + text" drops what is queued but finishes the character being
+keyed, buffered speed (++/--) and PTT timing are passed on. None of the pacing above is needed.
+
 Every byte from and to Win-Test is written to the traffic log, so the exact command set Win-Test
 uses can be checked against a real hardware test.
 
@@ -105,7 +110,10 @@ class WinKeyerEmulator:
                  on_abort: Callable[[], None], on_speed: Callable[[int], None],
                  traffic: TrafficLog | None = None, flush_ms: float = 20.0,
                  on_end: Callable[[str], None] | None = None, end_ms: float = 150.0,
-                 cq_repeat_s: float | None = None):
+                 cq_repeat_s: float | None = None,
+                 on_clear: Callable[[], None] | None = None,
+                 on_wpm: Callable[[int], None] | None = None,
+                 on_ptt: Callable[[int, int], None] | None = None):
         self.port = PtyPort(link)
         self.on_text = on_text
         self.on_abort = on_abort
@@ -117,6 +125,10 @@ class WinKeyerEmulator:
         self.end_delay_first = 0.35             # after the first character of a message
         self.end_delay_typing = 0.8             # keyboard mode: keys come slower than 80 ms
         self.cq_repeat_s = cq_repeat_s           # configured Win-Test repeat interval (optional)
+        self.remote_echo = False                # remote keyer reports characters (DTR keying)
+        self.on_clear = on_clear
+        self.on_wpm = on_wpm
+        self.on_ptt = on_ptt
         self.word_gap_units = 6                 # TS-590SG keys 6 units between words (measured)
         self.repeat_comp = 0.2                  # first word must arrive before keying starts
         self._end_timer: asyncio.TimerHandle | None = None
@@ -277,14 +289,29 @@ class WinKeyerEmulator:
             self._add_text(MERGE_TO_PROSIGN.get(pair, pair), echo=pair)
         elif cmd == 0x08:                               # backspace: remove last unsent char
             self._text = self._text[:-1]
-        elif cmd == 0x1C:
-            log.info("buffered speed change to %d WPM ignored (not possible with KY)", args[0])
+        elif cmd in (0x1C, 0x1E):                       # buffered speed (++/--), cancel
+            wpm = args[0] if cmd == 0x1C else 0
+            if self.remote_echo and self.on_wpm:
+                self._flush_now()
+                self.on_wpm(wpm)
+            else:
+                log.info("buffered speed change ignored (not possible with KY)")
+        elif cmd == 0x04:                               # PTT lead-in / tail, 10 ms units
+            if self.on_ptt:
+                self.on_ptt(args[0] * 10, args[1] * 10)
         else:
             log.debug("WinKeyer command %s %s accepted", name, args.hex())
 
     def _clear(self, text_follows: bool, first: str | None = None) -> None:
         """WinKeyer "clear buffer": ESC, or Win-Test starting a new message (see module doc)."""
         self._seen("clear")
+        if self.remote_echo:
+            if text_follows and self.on_clear:
+                self._text = ""
+                self.on_clear()                         # new message: queue dropped, char finished
+            else:
+                self._abort()
+            return
         now = time.monotonic()
         pause = now - self._last_echo
         if not text_follows or self._held is not None:
@@ -359,7 +386,33 @@ class WinKeyerEmulator:
         for ch, echo in chars:
             self._add_text(ch, echo)
 
+    def _flush_now(self) -> None:
+        if self._flush:
+            self._flush.cancel()
+            self._flush = None
+        if self._text:
+            text, self._text = self._text, ""
+            self.on_text(text)
+
+    def set_remote_echo(self, on: bool) -> None:
+        if on != self.remote_echo:
+            log.info("WinKeyer echo from the remote keyer: %s", "on" if on else "off")
+        self.remote_echo = on
+
+    def echo(self, ch: str) -> None:
+        """Remote keyer started a character (remote_echo mode)."""
+        if not self.echo_enabled:
+            return
+        rev = {v: k for k, v in MERGE_TO_PROSIGN.items() if k != "VA"}
+        self._send(rev.get(ch, ch).encode("latin-1"), "echo")
+        self._last_echo = time.monotonic()
+
     def _add_text(self, ch: str, echo: str | None = None) -> None:
+        if self.remote_echo:                            # remote keys char by char and echoes
+            self._text += ch.upper()
+            self.set_busy(True)
+            self._flush_now()
+            return
         if self._defer is not None:                     # CQ repeat waits for the rig
             self._defer_text.append((ch, echo))
             return

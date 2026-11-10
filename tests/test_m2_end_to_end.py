@@ -25,12 +25,14 @@ PROFILE = load_profile("profiles/ts590sg.yaml")
 
 
 class Stack:
-    async def start(self, tmp_path, kx2sim, rigsim, link_timeout_ms=1000):
+    async def start(self, tmp_path, kx2sim, rigsim, link_timeout_ms=1000, rcfg_extra=None,
+                    keyline=None):
         rcfg = deep_merge(REMOTE_DEFAULTS, {"listen": {"host": "127.0.0.1", "port": 0},
                                             "safety": {"link_timeout_ms": link_timeout_ms}})
+        rcfg = deep_merge(rcfg, rcfg_extra or {})
         self.rig = KenwoodRig(PROFILE, rigsim.port)
         await self.rig.open()
-        self.server = RemoteServer(rcfg, self.rig)
+        self.server = RemoteServer(rcfg, self.rig, keyline=keyline)
         await self.server.start()
 
         lcfg = deep_merge(LOCAL_DEFAULTS, {"kx2": {"port": kx2sim.port}})

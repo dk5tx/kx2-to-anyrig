@@ -94,6 +94,13 @@ In Win-Test: Options → Configure Interfaces → COM2 = **WinKeyer** (no CW/PTT
 - If the control link is lost, CW is blocked until the next connect.
 - Every WinKeyer byte is logged in the traffic log (`WK>` / `WK<`).
 
+**Keying over DTR instead of `KY`** (rig KEY input on a serial DTR line, set to straight key):
+in the remote config set `cw: {method: dtr}` and `keyline: {port: /dev/ttyUSB0, ptt: rts}`
+(`ptt: null` without amplifier). anyrig-remote then keys character by character and reports
+each character back when it starts, like a real WinKeyer. Win-Test completes a call you are
+still typing (DL [Ins] 1XYZ), `++`/`--` works, CQ repeat and keyboard mode need no tricks.
+Check the timing first (transmits – dummy load): `python3 tools/dtr_test.py --port /dev/ttyUSB0 --wpm 26`.
+
 Not yet: audio (M5), web UI (M6).
 
 ## Idea
