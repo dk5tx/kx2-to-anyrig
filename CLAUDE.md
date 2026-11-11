@@ -125,6 +125,9 @@ kx2-local pty and the "CW"/"PTT" options on COM1 must be **off** (a pty has no m
   - rarely a packet is lost (10 Nov 2026): answered with `E;` (communication error), and the next packet right
     after was ignored without any answer → resend after `;` on E/O, resend once if no `TX` within 250 ms.
 - Sidetone is on USB audio (menu 06 = sidetone level, 8/20 preferred). Menu 72 = USB output level (RX only).
+- USB output level (menu 72), measured 11 Nov 2026 with `arecord hw:CARD=CODEC` (40 m, AGC on): ~3 dB per step.
+  Level 5: strong CW peaks −10 dBFS, band noise RMS −24 dBFS, no clipping. Level 9: CW clipped heavily
+  (106 620 samples in 20 s), noise crackle clips. **Recommended: 6** (CW peaks ≈ −7 dBFS); gain on the laptop side.
 - Filter: `FW` only steps 50, 80, 100, 150, 200, 250 … 1000, 1500, 2000, 2500 Hz. `IS` = CW centre 300–1000 Hz (50 Hz steps).
 - RIT offset: no absolute set; use `RC` (clear) + `RU`/`RD` (Hz step).
 - AGC: `GC` (0 off, 1 slow, 2 fast). `GT` means time constant (≠ KX2 `GT`).
