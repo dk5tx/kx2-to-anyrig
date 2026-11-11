@@ -44,7 +44,8 @@ LOCAL_DEFAULTS: dict[str, Any] = {
     # RX audio from the shack; jitter 40 ms for WLAN (25 ms with a cable), sink pulse = measured
     # 96 ms end to end; af_curve log: KX2 AF 60 = volume 1.0, af_range_db below that
     "audio": {"enabled": True, "port": 7356, "jitter_ms": 40, "sink": "pulse", "af_curve": "log",
-              "af_range_db": 40, "gain": 1.0, "pulse_latency_ms": 10, "af_default": 30},
+              "af_range_db": 40, "gain": 1.0, "pulse_latency_ms": 10, "af_default": 30,
+              "sink_buffer_ms": 20},
     "webui": {"host": "127.0.0.1", "port": 8073},
     "log": {"level": "INFO", "file": None},
 }

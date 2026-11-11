@@ -122,6 +122,15 @@ class KenwoodRig(Rig):
             return ["FR1;"] + code + back
         if key == "split":
             return ["FR0;", "FT1;"] if value else ["FT0;"]
+        if key == "agc" and value != "off" and st.get("agc") == "off" \
+                and self.profile.get("agc_on_from_off"):
+            # measured 11 Nov 2026: with AGC off the TS-590SG ignores GC1/GC2; it must be
+            # switched on first (GC3 = AGC on, previous time constant)
+            spec = self.commands.get("agc", {})
+            rev = {name: code for code, name in spec.get("map", {}).items()}
+            if value not in rev:
+                return None
+            return [self.profile["agc_on_from_off"], spec["set"].format(v=rev[value])]
         if key == "filter_bw":
             mode = st.get("mode")
             want = float(value)

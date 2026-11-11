@@ -48,6 +48,9 @@ commands:
   antenna:     {cmd: AN, type: raw}
   filter_slot: {cmd: FL, type: raw}
 
+# AGC off -> slow/fast: the rig ignores GC1/GC2 while AGC is off (measured 11 Nov 2026); GC3 = AGC on
+agc_on_from_off: "GC3;"
+
 # what "on" from a simple on/off control head means for multi-level functions
 on_levels: {nb: 1, nr: 1, notch: 1, beat_cancel: 1}
 

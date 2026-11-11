@@ -41,12 +41,13 @@ def af_to_volume(af: float, curve: str = "log", range_db: float = 40.0, gain: fl
 
 def sink_element(cfg: dict) -> str:
     sink = str(cfg.get("sink", "pulse"))
+    buf = int(cfg.get("sink_buffer_ms", 20)) * 1000
     if sink in ("pulse", "default"):
-        return "pulsesink buffer-time=20000 latency-time=5000"
+        return "pulsesink buffer-time=%d latency-time=5000" % buf
     if sink == "auto":
         return "autoaudiosink"
     if sink.startswith("alsa:"):
-        return "alsasink device=%s buffer-time=20000 latency-time=5000" % sink[5:]
+        return "alsasink device=%s buffer-time=%d latency-time=5000" % (sink[5:], buf)
     if sink == "fake":
         return "fakesink sync=true"
     return sink                                     # any element description

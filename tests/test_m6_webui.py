@@ -98,3 +98,33 @@ def test_silent_link_unkeys_within_one_second(tmp_path):
             # (the laptop reconnects right after, which lifts the block again)
             await s.stop()
     run(body())
+
+
+def test_webui_stops_with_an_open_event_stream():
+    """11 Nov 2026: Ctrl+C did not end kx2-local while a browser tab had /events open."""
+    from anyrig.common.state import State
+
+    async def body():
+        ui = WebUI({"host": "127.0.0.1", "port": 0}, State())
+        await ui.start()
+        r, w = await asyncio.open_connection("127.0.0.1", ui.port)
+        w.write(b"GET /events HTTP/1.1\r\nHost: x\r\n\r\n")
+        await w.drain()
+        await asyncio.wait_for(r.read(100), 2)
+        t0 = time.monotonic()
+        await asyncio.wait_for(ui.stop(), 3)
+        assert time.monotonic() - t0 < 1.5
+        w.close()
+    run(body())
+
+
+def test_agc_back_on_from_off_sends_gc3_first():
+    """Measured: with AGC off the TS-590SG ignores GC1/GC2."""
+    from anyrig.drivers.kenwood import KenwoodRig
+    from anyrig.remote.main import load_profile
+    rig = KenwoodRig(load_profile("profiles/ts590sg.yaml"), "/dev/null", 115200)
+    rig.state.set("agc", "off", "rig")
+    assert rig._encode("agc", "fast") == ["GC3;", "GC2;"]
+    rig.state.set("agc", "slow", "rig")
+    assert rig._encode("agc", "fast") == ["GC2;"]
+    assert rig._encode("agc", "off") == ["GC0;"]

@@ -81,7 +81,7 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            loop.add_signal_handler(sig, stop.set)
+            loop.add_signal_handler(sig, _stop_or_force, stop)
         except (NotImplementedError, RuntimeError):
             pass
 
@@ -112,18 +112,31 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     try:
         await stop.wait()
     finally:
-        if link:
-            await link.stop()
-        if audio:
-            await audio.stop()
-        if webui:
-            await webui.stop()
-        if wk:
-            await wk.stop()
-        await emu.stop()
-        await kx2.stop()
+        log.info("stopping …")
+        for part in (link, audio, webui, wk):
+            if part:
+                await _bounded(part.stop(), type(part).__name__)
+        await _bounded(emu.stop(), "K3Emulator")
+        await _bounded(kx2.stop(), "KX2Link")
         traffic.close()
         log.info("stopped")
+
+
+def _stop_or_force(stop: asyncio.Event) -> None:
+    """First Ctrl+C: clean stop. Second Ctrl+C: leave at once (never hang in a terminal)."""
+    if stop.is_set():
+        log.warning("second Ctrl+C – exiting immediately")
+        os._exit(1)
+    stop.set()
+
+
+async def _bounded(coro, name: str, timeout: float = 3.0) -> None:
+    try:
+        await asyncio.wait_for(coro, timeout)
+    except asyncio.TimeoutError:
+        log.warning("%s did not stop within %.0f s – skipped", name, timeout)
+    except Exception as exc:
+        log.warning("%s: error while stopping: %s", name, exc)
 
 
 def wine_com_path(com: str) -> str:

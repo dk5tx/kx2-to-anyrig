@@ -9,7 +9,9 @@
 --ok:#3ccf6e;--warn:#f0b429;--bad:#ff5a5a;--tx:#ff4d4d;--bar:#2f81c7}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);
 font:14px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif}
-header{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--line)}
+header{display:flex;gap:16px;align-items:center;flex-wrap:nowrap;overflow:hidden;white-space:nowrap;
+padding:8px 14px;border-bottom:1px solid var(--line);min-height:37px}
+#cwstate{display:inline-block;min-width:4.5em}
 header b{font-weight:600}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--bad);margin-right:5px}
 .dot.ok{background:var(--ok)}.dim{color:var(--dim)}
 #warn{display:none;background:#4a2a00;color:var(--warn);padding:6px 14px;border-bottom:1px solid #6b4500}
@@ -47,7 +49,7 @@ footer{padding:0 14px 12px;color:var(--dim);font-size:12px}
   <span style="display:flex;align-items:center;gap:6px" class="dim">Level
     <span class="track" style="width:120px;display:inline-block"><span id="alevel" class="fill" style="display:block"></span></span>
     <span id="aleveldb">–</span></span>
-  <span class="dim">CW <span id="cw">–</span></span>
+  <span class="dim">CW <span id="cw">–</span> <span id="cwstate"></span></span>
   <span class="dim">KX2 AF <span id="af">–</span></span>
 </header>
 <div id="warn"></div>
@@ -187,7 +189,8 @@ function render() {
   const lvl = a.level_db; $("aleveldb").textContent = lvl == null ? "–" : lvl.toFixed(0) + " dBFS";
   const lf = $("alevel"); const x = lvl == null ? 0 : Math.max(0, Math.min(1, (lvl + 60) / 60));
   lf.style.width = (x * 100) + "%"; lf.className = "fill" + (lvl > -3 ? " bad" : lvl > -9 ? " hot" : "");
-  $("cw").textContent = (S.cw || "–") + (S.keyer_busy ? " · sending" : "");
+  $("cw").textContent = S.cw || "–";
+  $("cwstate").textContent = S.keyer_busy ? "· sending" : "";
   $("af").textContent = S.kx2 && S.kx2.af != null ? S.kx2.af : "–";
   const w = [];
   if (S.kx2 && S.kx2.power) w.push("KX2 output power is " + S.kx2.power + " – set 0 W / TX TEST, the KX2 must not transmit.");

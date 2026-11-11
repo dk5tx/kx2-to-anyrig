@@ -44,6 +44,7 @@ class WebUI:
         self.server: asyncio.base_events.Server | None = None
         self.port = 0
         self.clients = 0
+        self._writers: set[asyncio.StreamWriter] = set()
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -53,9 +54,20 @@ class WebUI:
         log.info("web UI on http://%s:%s/", host, self.port)
 
     async def stop(self) -> None:
+        # open event streams (browser tabs) would keep wait_closed() waiting forever
+        # (11 Nov 2026: Ctrl+C did not end kx2-local) -> close them first, never wait long
         if self.server:
             self.server.close()
-            await self.server.wait_closed()
+        for w in list(self._writers):
+            try:
+                w.close()
+            except Exception:
+                pass
+        if self.server:
+            try:
+                await asyncio.wait_for(self.server.wait_closed(), 1.0)
+            except asyncio.TimeoutError:
+                pass
 
     # ------------------------------------------------------------------ snapshot
     def snapshot(self) -> dict[str, Any]:
@@ -101,6 +113,7 @@ class WebUI:
 
     # ------------------------------------------------------------------ HTTP
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._writers.add(writer)
         try:
             line = await asyncio.wait_for(reader.readline(), 10)
             parts = line.decode("latin-1").split()
@@ -140,6 +153,7 @@ class WebUI:
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionError):
             pass
         finally:
+            self._writers.discard(writer)
             try:
                 writer.close()
             except Exception:
