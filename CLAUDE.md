@@ -371,6 +371,11 @@ prosign map, mode-dependent commands, capabilities, ignore list (`RS`).
   default), measured acoustically; GStreamer defaults gave 230 ms, pipewiresink 237 ms. No dropouts in 93 s with
   Opus PLC (before: ~4 per 2 min). AF knob = volume works (GStreamer volume element, not the mixer slider).
 - **M6 Web UI + safety**: meters, buttons, watchdog/TX timeout tests (pull the network cable → TX stops ≤ 1 s).
+  **Accepted on hardware 11 Nov 2026**: all web UI controls (ATT, PRE, NB, NR, notch, beat cancel, AGC incl.
+  off → on via `GC3`, antenna, CW tune, ATU tune); WLAN off during CQ → TS-590SG stops at once, CW works again
+  right after the reconnect. Found on the way: Win-Test sends `FF` when it re-opens the WinKeyer (never text);
+  on link loss kx2-local must echo what Win-Test still waits for, else the F keys stay dead until REOPEN;
+  after a kx2-local restart Win-Test needs REOPEN (new ptys).
 - **M7 Packaging & docs**: install guide (apt packages, dialout group, Wine COM links, Win-Test settings), systemd user
   units, English README + German quick start, profile writing guide.
 

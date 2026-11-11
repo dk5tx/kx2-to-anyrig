@@ -113,7 +113,7 @@ laptop volume (needs `python3-gi`, normally installed on Mint; without it the vo
 - UDP port 7356 must be open on the laptop (Mint: ufw is off by default).
 - `kx2-local --no-audio` switches it off; `audio: {source: test}` on the remote sends a tone.
 
-### Milestone M6: web UI and safety
+### Milestone M6: web UI and safety (accepted on hardware 11 Nov 2026)
 
 kx2-local serves a page at **http://127.0.0.1:8073/** (standard library only, no extra package):
 frequency, mode, filter, RIT/XIT, TX, meters (S/PO, SWR, ALC, COMP), link RTT, audio level, KX2
