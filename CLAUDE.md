@@ -364,6 +364,9 @@ prosign map, mode-dependent commands, capabilities, ignore list (`RS`).
   timing (C→Q 648 ms, word gap 323 ms at 26 WPM), echo late in the character (`echo_budget_ms` 220) so Win-Test
   completes a call typed while sending (DL [Ins] 1XYZ). Echo delivery over WLAN: median 7 ms, p99 19 ms, max 100 ms.
 - **M5 Audio**: Acceptance: sidetone and RX audio on the laptop, measured latency documented, AF knob = volume.
+  **Accepted on hardware 11 Nov 2026**: rig speaker -> laptop 96 ms (jitter buffer 25 ms) / 102 ms (40 ms, WLAN
+  default), measured acoustically; GStreamer defaults gave 230 ms, pipewiresink 237 ms. No dropouts in 93 s with
+  Opus PLC (before: ~4 per 2 min). AF knob = volume works (GStreamer volume element, not the mixer slider).
 - **M6 Web UI + safety**: meters, buttons, watchdog/TX timeout tests (pull the network cable → TX stops ≤ 1 s).
 - **M7 Packaging & docs**: install guide (apt packages, dialout group, Wine COM links, Win-Test settings), systemd user
   units, English README + German quick start, profile writing guide.
