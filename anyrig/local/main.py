@@ -18,6 +18,7 @@ from .. import __version__
 from ..common import config, log as logsetup
 from ..common.log import TrafficLog
 from ..common.state import State
+from .audio_rx import AudioReceiver
 from .k3emu import K3Emulator
 from .kx2 import KX2Link
 from .link import RemoteLink
@@ -61,6 +62,16 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
                                   on_abort=lambda: None,
                                   on_speed=lambda w: kx2.write_state("keyer_wpm", w), traffic=traffic)
 
+    audio: AudioReceiver | None = None
+    if link and cfg["audio"].get("enabled", True):
+        audio = AudioReceiver(cfg["audio"])
+        link.on_connect = lambda: link.send({"t": "audio", "port": audio.port})
+
+        def _af(key, value, source):
+            if key == "af_gain" and source == "kx2" and isinstance(value, (int, float)):
+                audio.set_af(value)                  # KX2 AF knob = laptop volume
+        state.subscribe(_af)
+
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -79,6 +90,8 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     if wk:
         wk.start()
         check_wine_com(cfg["wintest"]["winkeyer_pty_link"], "COM2")
+    if audio:
+        audio.start()
     if link:
         link.start()
         log.info("connecting to remote %s:%s", cfg["remote"]["host"], cfg["remote"]["port"])
@@ -90,6 +103,8 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     finally:
         if link:
             await link.stop()
+        if audio:
+            await audio.stop()
         if wk:
             await wk.stop()
         await emu.stop()
@@ -132,12 +147,15 @@ def main(argv: list[str] | None = None) -> None:
                     help="no remote: route all Win-Test commands to the KX2 (test/M1 mode)")
     ap.add_argument("--kx2-port", help="override kx2.port")
     ap.add_argument("--remote", help="remote host[:port], overrides remote.host/port")
+    ap.add_argument("--no-audio", action="store_true", help="do not receive RX audio")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args(argv)
 
     cfg = config.load(args.config, config.LOCAL_DEFAULTS)
     if args.local_only:
         cfg["router"]["default"] = "kx2"
+    if args.no_audio:
+        cfg["audio"]["enabled"] = False
     if args.kx2_port:
         cfg["kx2"]["port"] = args.kx2_port
     if args.remote:

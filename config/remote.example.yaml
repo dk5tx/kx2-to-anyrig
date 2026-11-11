@@ -12,6 +12,8 @@ rig:
 cw: {method: cat}
 # key line for method dtr; ptt: rts (amplifier) or null. PTT lead/tail come from Win-Test.
 keyline: {port: /dev/ttyUSB0, key: dtr, ptt: rts}
-audio: {source: "hw:CARD=CODEC", port: 7356, bitrate: 48000, frame_ms: 10}
+# RX audio to the connected kx2-local (UDP port chosen by kx2-local). source: ALSA device
+# (direct, past PipeWire/EasyEffects), "pulse:<name>" or "test" (600 Hz tone).
+audio: {enabled: true, source: "hw:CARD=CODEC", bitrate: 48000, frame_ms: 10, buffer_ms: 20, latency_ms: 5}
 safety: {link_timeout_ms: 1000, tx_timeout_s: 60, max_power_w: 100}
 log: {level: INFO, file: null}

@@ -101,7 +101,19 @@ each character back when it starts, like a real WinKeyer. Win-Test completes a c
 still typing (DL [Ins] 1XYZ), `++`/`--` works, CQ repeat and keyboard mode need no tricks.
 Check the timing first (transmits – dummy load): `python3 tools/dtr_test.py --port /dev/ttyUSB0 --wpm 26`.
 
-Not yet: audio (M5), web UI (M6).
+### Milestone M5: RX audio
+
+anyrig-remote streams the rig's USB sound card (RX audio incl. CW sidetone) with Opus over RTP/UDP
+to the connected kx2-local; kx2-local plays it with small buffers. The KX2 AF knob sets the
+laptop volume (needs `python3-gi`, normally installed on Mint; without it the volume is fixed).
+
+- apt: `gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad`
+- measured (TS-590SG -> WLAN -> laptop): **96 ms** with these settings (230 ms with GStreamer defaults)
+- WLAN: `audio.jitter_ms: 40` (default); with a cable 25 is enough. Lost packets are concealed by Opus.
+- UDP port 7356 must be open on the laptop (Mint: ufw is off by default).
+- `kx2-local --no-audio` switches it off; `audio: {source: test}` on the remote sends a tone.
+
+Not yet: web UI (M6).
 
 ## Idea
 

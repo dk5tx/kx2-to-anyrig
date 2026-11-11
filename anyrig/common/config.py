@@ -41,7 +41,10 @@ LOCAL_DEFAULTS: dict[str, Any] = {
         "apf": {"key": "notch", "on": 2, "off": 0, "modes": ["CW", "CW-R"]},     # manual notch
         "notch": {"key": "notch", "on": 1, "off": 0, "modes": ["USB", "LSB"]},   # auto notch
     },
-    "audio": {"port": 7356, "jitter_ms": 40, "sink": "default", "af_curve": "log"},
+    # RX audio from the shack; jitter 40 ms for WLAN (25 ms with a cable), sink pulse = measured
+    # 96 ms end to end; af_curve log: KX2 AF 60 = volume 1.0, af_range_db below that
+    "audio": {"enabled": True, "port": 7356, "jitter_ms": 40, "sink": "pulse", "af_curve": "log",
+              "af_range_db": 40, "gain": 1.0, "pulse_latency_ms": 10, "af_default": 30},
     "webui": {"host": "127.0.0.1", "port": 8073},
     "log": {"level": "INFO", "file": None},
 }
@@ -51,7 +54,10 @@ REMOTE_DEFAULTS: dict[str, Any] = {
     "rig": {"profile": "profiles/ts590sg.yaml", "port": "/dev/ttyUSB1", "baud": 115200},
     "cw": {"method": "cat"},
     "keyline": {"port": "/dev/ttyUSB0", "key": "dtr", "ptt": "rts"},
-    "audio": {"source": "hw:CARD=CODEC", "port": 7356, "bitrate": 48000, "frame_ms": 10},
+    # source: ALSA device (hw:...), "pulse:<source name>" or "test" (tone); the stream goes to the
+    # connected kx2-local, to the UDP port it asks for
+    "audio": {"enabled": True, "source": "hw:CARD=CODEC", "bitrate": 48000, "frame_ms": 10,
+              "buffer_ms": 20, "latency_ms": 5},
     "safety": {"link_timeout_ms": 1000, "tx_timeout_s": 60, "max_power_w": 100},
     "log": {"level": "INFO", "file": None},
 }

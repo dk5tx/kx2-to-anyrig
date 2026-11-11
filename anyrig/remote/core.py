@@ -16,6 +16,7 @@ from ..common import protocol
 from ..common.protocol import Connection
 from ..drivers.base import Rig
 from .cwtext import CWSender
+from .audio_tx import AudioSender
 from .dtrkeyer import DTRKeyer
 
 log = logging.getLogger("remote")
@@ -50,6 +51,7 @@ class RemoteServer:
         else:
             self.cw = CWSender(rig, rig.profile.get("cw"), on_done=self._cw_done)
         rig.on_raw = self.cw.on_raw
+        self.audio = AudioSender(cfg.get("audio") or {})
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -65,6 +67,7 @@ class RemoteServer:
         for t in self._tasks:
             t.cancel()
         await self.cw.stop()
+        await self.audio.stop()
         if self.conn:
             self.conn.close()
         if self.server:
@@ -94,6 +97,7 @@ class RemoteServer:
                 log.warning("client %s disconnected", conn.peer)
                 self._safety("link closed")
                 self.conn = None
+                asyncio.create_task(self.audio.stop())
 
     def handle(self, msg: dict, conn: Connection) -> None:
         t = msg.get("t")
@@ -115,6 +119,9 @@ class RemoteServer:
             log.info("client hello: %s", msg)
         elif t == "cw":
             self.cw.send(str(msg.get("text", "")), msg.get("id"), end=bool(msg.get("end")))
+        elif t == "audio":                       # kx2-local wants RX audio on this UDP port
+            peer = conn.peer[0] if isinstance(conn.peer, (tuple, list)) else str(conn.peer)
+            asyncio.create_task(self.audio.start(peer, int(msg.get("port", 7356))))
         elif t == "cw_abort":
             self.cw.abort()
         elif t == "cw_clear":                    # drop queued text, finish the current character
