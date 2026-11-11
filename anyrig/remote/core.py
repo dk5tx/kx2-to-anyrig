@@ -96,7 +96,10 @@ class RemoteServer:
         conn.send({"t": "snapshot_done"})
         try:
             async for msg in conn.messages():
-                self.handle(msg, conn)
+                try:
+                    self.handle(msg, conn)
+                except Exception:                   # one bad message must not drop the link
+                    log.exception("error handling %r", msg)
         finally:
             if self.conn is conn:
                 log.warning("client %s disconnected", conn.peer)

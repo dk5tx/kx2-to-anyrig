@@ -98,7 +98,8 @@ class DTRKeyer:
         with self._cv:
             self._abort.clear()
             for ch in text.upper():
-                self._q.append(ch)
+                if " " <= ch <= "~":                    # printable ASCII only
+                    self._q.append(ch)
             if msg_id is not None:
                 self._ids.append(msg_id)
             self._cv.notify()

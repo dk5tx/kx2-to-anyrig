@@ -62,6 +62,8 @@ class RemoteLink:
         return True
 
     async def _run(self) -> None:
+        # Nothing may end this loop except cancellation: on 11 Nov 2026 one exception in a
+        # message handler killed the task and kx2-local never reconnected.
         delay = 0.5
         while True:
             try:
@@ -72,30 +74,48 @@ class RemoteLink:
                 delay = min(delay * 2, 5.0)
                 continue
             delay = 0.5
-            conn = Connection(reader, writer)
-            self.conn = conn
-            log.info("connected to remote %s:%s", self.host, self.port)
-            conn.send({"t": "hello", "role": "local", "version": protocol.VERSION})
-            pinger = asyncio.create_task(self._ping(conn))
-            self._connected.set()
+            try:
+                await self._session(Connection(reader, writer))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("control link failed – reconnecting")
+                await asyncio.sleep(0.5)
+
+    async def _session(self, conn: Connection) -> None:
+        self.conn = conn
+        log.info("connected to remote %s:%s", self.host, self.port)
+        conn.send({"t": "hello", "role": "local", "version": protocol.VERSION})
+        pinger = asyncio.create_task(self._ping(conn))
+        self._connected.set()
+        try:
             if self.on_connect:
                 self.on_connect()
-            try:
-                async for msg in conn.messages():
-                    if msg.get("t") == "pong":
-                        ts = msg.get("ts")
-                        if isinstance(ts, (int, float)):
-                            self.rtt_ms = round((time.monotonic() - ts) * 1000.0, 1)
-                        continue
-                    if self.on_message:
+            async for msg in conn.messages():
+                if msg.get("t") == "pong":
+                    ts = msg.get("ts")
+                    if isinstance(ts, (int, float)):
+                        self.rtt_ms = round((time.monotonic() - ts) * 1000.0, 1)
+                    continue
+                if self.on_message:
+                    try:
                         self.on_message(msg)
-            finally:
-                pinger.cancel()
-                self._connected.clear()
-                self.conn = None
-                if self.on_disconnect:
+                    except Exception:
+                        log.exception("error handling %r", msg)
+        finally:
+            pinger.cancel()
+            self._connected.clear()
+            self.conn = None
+            try:
+                conn.close()
+            except Exception:
+                pass
+            if self.on_disconnect:
+                try:
                     self.on_disconnect()
-                log.warning("remote connection lost – reconnecting")
+                except Exception:
+                    log.exception("error in disconnect handler")
+            log.warning("remote connection lost – reconnecting")
 
     async def _ping(self, conn: Connection) -> None:
         while not conn.closed:

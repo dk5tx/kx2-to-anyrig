@@ -228,16 +228,20 @@ class WinKeyerEmulator:
                     return
                 args = bytes(buf[1:1 + n])
                 if b == 0x0A:                           # clear: does text follow in this write?
-                    first = next((chr(x) for x in buf[1:] if x >= 0x20), None)
+                    first = next((chr(x) for x in buf[1:] if 0x20 <= x < 0x7F), None)
                     self._clear(first is not None, first)
                     del buf[:1]
                     continue
                 del buf[:1 + n]
                 self._command(b, args)
                 continue
-            # text
             del buf[:1]
-            self._add_text(chr(b))
+            if b >= 0x7F:
+                # not text: Win-Test sends FF when (re)opening the port (11 Nov 2026). As text it
+                # became 'Y-umlaut' and its echo crashed the control link -> ignore.
+                log.debug("byte 0x%02X ignored", b)
+                continue
+            self._add_text(chr(b))                      # text (printable ASCII)
 
     def _admin(self, sub: int, args: bytes) -> None:
         self._seen("admin_%02X" % sub)
@@ -404,7 +408,11 @@ class WinKeyerEmulator:
         if not self.echo_enabled:
             return
         rev = {v: k for k, v in MERGE_TO_PROSIGN.items() if k != "VA"}
-        self._send(rev.get(ch, ch).encode("latin-1"), ("echo " + note).strip())
+        data = rev.get(ch, ch).encode("ascii", errors="ignore")
+        if not data:
+            log.debug("echo of %r skipped (not ASCII)", ch)
+            return
+        self._send(data, ("echo " + note).strip())
         self._last_echo = time.monotonic()
 
     def _add_text(self, ch: str, echo: str | None = None) -> None:
