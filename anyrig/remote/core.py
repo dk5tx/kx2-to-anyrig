@@ -85,6 +85,9 @@ class RemoteServer:
         self.conn = conn
         self.cw.blocked = False                  # safety block ends with a new connection
         log.info("client connected: %s", conn.peer)
+        tr = getattr(self.rig, "traffic", None)
+        if tr:
+            tr.write("LINK", "client connected", str(conn.peer))
         conn.send({"t": "hello", "role": "remote", "version": protocol.VERSION,
                    "rig": self.rig.profile.get("name"), "caps": sorted(self.rig.capabilities()),
                    "cw": "dtr" if self.cw_method == "dtr" else "text", "max_power": self.max_power})
@@ -206,6 +209,9 @@ class RemoteServer:
                 self._tx_since = None
 
     def _safety(self, reason: str) -> None:
+        tr = getattr(self.rig, "traffic", None)
+        if tr:
+            tr.write("SAFE", reason, "rig unkeyed, CW blocked until the next connect")
         try:
             self.cw.blocked = True
             self.cw.abort()

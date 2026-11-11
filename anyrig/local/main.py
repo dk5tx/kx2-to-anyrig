@@ -40,7 +40,10 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
         link = RemoteLink(cfg["remote"]["host"], cfg["remote"]["port"])
         sync = Sync(state, link, cfg.get("kx2_keys"), kx2=kx2)
         link.on_message = sync.on_message
-        link.on_disconnect = sync.on_disconnect
+        def _lost():
+            traffic.write("LINK", "lost", "last RTT %s ms" % link.rtt_ms)
+            sync.on_disconnect()
+        link.on_disconnect = _lost
     elif cfg["router"]["default"] != "kx2":
         log.warning("no remote.host configured – commands for the remote rig are dropped "
                     "(use --local-only or set remote.host)")
@@ -67,6 +70,14 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
     if link and cfg["audio"].get("enabled", True):
         audio = AudioReceiver(cfg["audio"])
         link.on_connect = lambda: link.send({"t": "audio", "port": audio.port})
+    if link:
+        _connect = link.on_connect
+
+        def _connected():
+            traffic.write("LINK", "connected", "%s:%s" % (cfg["remote"]["host"], cfg["remote"]["port"]))
+            if _connect:
+                _connect()
+        link.on_connect = _connected
 
         def _af(key, value, source):
             if key == "af_gain" and source == "kx2" and isinstance(value, (int, float)):
