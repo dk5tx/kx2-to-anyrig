@@ -141,7 +141,7 @@ Two programs in one Python package `anyrig` (Python ≥ 3.10, asyncio):
 ```
 anyrig/
   common/      protocol.py (control messages), config.py, log.py, morse.py
-  local/       kx2.py (KX2 link + poll scheduler), k3emu.py (Win-Test CAT pty),
+  local/       kx2.py (KX2 link + poll scheduler), k3emu.py (Win-Test CAT pty), ports.py (anyrig-ports pty holder),
                winkeyer.py (WinKeyer pty), router.py (command routing), sync.py,
                audio_rx.py, webui/ (stdlib HTTP + Server-Sent Events, one html file), main.py
   remote/      core.py (state, sync, safety), cwtext.py (KY chunking / DTR fallback),
@@ -377,7 +377,10 @@ prosign map, mode-dependent commands, capabilities, ignore list (`RS`).
   on link loss kx2-local must echo what Win-Test still waits for, else the F keys stay dead until REOPEN;
   after a kx2-local restart Win-Test needs REOPEN (new ptys).
 - **M7 Packaging & docs**: install guide (apt packages, dialout group, Wine COM links, Win-Test settings), systemd user
-  units, English README + German quick start, profile writing guide.
+  units, profile writing guide. All documentation in English only (author's decision, 11 Nov 2026; no German quick
+  start). WLAN power saving must be off permanently (NetworkManager `wifi.powersave = 2`); use `/dev/serial/by-id`.
+  `anyrig-ports` (`local/ports.py`) holds Win-Test's ptys and hands the master fd to kx2-local (SCM_RIGHTS over a
+  Unix socket), so kx2-local restarts need no REOPEN; it drains Win-Test's writes while kx2-local is away.
 
 Later: paddle (RP2040 or serial CTS/DSR, time-stamped key events, DTR on remote), SSB TX + PTT, WireGuard guide,
 drivers yaesu/icom/hamlib, KX3/K3 as control head.
