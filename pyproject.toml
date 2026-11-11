@@ -13,7 +13,6 @@ requires-python = ">=3.10"
 dependencies = ["PyYAML"]
 
 [project.optional-dependencies]
-webui = ["aiohttp"]
 test = ["pytest"]
 
 [project.scripts]
@@ -25,6 +24,9 @@ version = {attr = "anyrig.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["anyrig*"]
+
+[tool.setuptools.package-data]
+anyrig = ["local/webui/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -55,7 +55,7 @@ def sink_element(cfg: dict) -> str:
 def pipeline(cfg: dict, volume: float) -> str:
     return ('udpsrc port={port} caps="{caps}" ! rtpjitterbuffer latency={jit} do-lost=true ! '
             "rtpopusdepay ! opusdec plc=true ! audioconvert ! audioresample ! "
-            "volume name=vol volume={vol} ! {sink}").format(
+            "level name=lvl interval=100000000 ! volume name=vol volume={vol} ! {sink}").format(
         port=int(cfg.get("port", 7356)), caps=CAPS, jit=int(cfg.get("jitter_ms", 40)),
         vol=volume, sink=sink_element(cfg))
 
@@ -79,6 +79,7 @@ class AudioReceiver:
                                    float(cfg.get("af_range_db", 40)), float(cfg.get("gain", 1.0)))
         self.state = "stopped"
         self.restarts = 0
+        self.level_db: float | None = None       # peak of the received audio (before volume)
         self._gst = _gst_module() if use_bindings is not False else None
         self._pipe: Any = None
         self._vol: Any = None
@@ -153,16 +154,30 @@ class AudioReceiver:
                 log.info("RX audio on UDP port %s (jitter buffer %s ms, volume %.3f)",
                          self.port, self.cfg.get("jitter_ms", 40), self.volume)
                 bus = self._pipe.get_bus()
-                while True:
-                    msg = bus.pop_filtered(Gst.MessageType.ERROR | Gst.MessageType.EOS)
-                    if msg is not None:
+                done = False
+                while not done:
+                    while True:
+                        msg = bus.pop_filtered(Gst.MessageType.ERROR | Gst.MessageType.EOS
+                                               | Gst.MessageType.ELEMENT)
+                        if msg is None:
+                            break
+                        if msg.type == Gst.MessageType.ELEMENT:
+                            s = msg.get_structure()
+                            if s is not None and s.get_name() == "level":
+                                try:
+                                    self.level_db = round(max(s.get_value("peak")), 1)
+                                except Exception:
+                                    pass
+                            continue
                         if msg.type == Gst.MessageType.ERROR:
                             err, dbg = msg.parse_error()
                             log.warning("audio pipeline error: %s (%s)", err.message, dbg)
                         else:
                             log.warning("audio pipeline ended")
+                        done = True
                         break
-                    await asyncio.sleep(0.25)
+                    if not done:
+                        await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

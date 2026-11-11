@@ -32,10 +32,11 @@ def source_element(cfg: dict) -> str:
 
 def pipeline(cfg: dict, host: str, port: int) -> str:
     return ("{src} ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=1 ! "
-            "opusenc frame-size={frame} bitrate={rate} audio-type=voice ! rtpopuspay pt=96 ! "
+            "opusenc frame-size={frame} bitrate={rate} audio-type=voice{bw} ! rtpopuspay pt=96 ! "
             "udpsink host={host} port={port} sync=false").format(
         src=source_element(cfg), frame=int(cfg.get("frame_ms", 10)),
-        rate=int(cfg.get("bitrate", 48000)), host=host, port=int(port))
+        rate=int(cfg.get("bitrate", 48000)), host=host, port=int(port),
+        bw=(" bandwidth=" + str(cfg["bandwidth"])) if cfg.get("bandwidth") else "")
 
 
 class AudioSender:

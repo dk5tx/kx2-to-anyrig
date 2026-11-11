@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>anyrig</title>
+<style>
+:root{--bg:#111417;--panel:#1a1f24;--line:#2a3138;--text:#d8dee4;--dim:#7d8790;--acc:#4fb3ff;
+--ok:#3ccf6e;--warn:#f0b429;--bad:#ff5a5a;--tx:#ff4d4d;--bar:#2f81c7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);
+font:14px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--line)}
+header b{font-weight:600}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--bad);margin-right:5px}
+.dot.ok{background:var(--ok)}.dim{color:var(--dim)}
+#warn{display:none;background:#4a2a00;color:var(--warn);padding:6px 14px;border-bottom:1px solid #6b4500}
+main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(300px,1fr);gap:12px;padding:12px}
+@media(max-width:760px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.freq{font:600 44px/1.1 ui-monospace,"DejaVu Sans Mono",monospace;letter-spacing:1px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.tag{padding:2px 8px;border:1px solid var(--line);border-radius:4px;color:var(--dim)}
+.tag.on{color:var(--text);border-color:var(--acc)}
+#txbadge{padding:4px 12px;border-radius:4px;font-weight:700;background:#26313a;color:var(--dim)}
+#txbadge.on{background:var(--tx);color:#fff}
+.meter{display:grid;grid-template-columns:52px 1fr 52px;gap:8px;align-items:center;margin:7px 0}
+.track{height:14px;background:#0c0f12;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.fill{height:100%;width:0;background:var(--bar);transition:width .08s linear}
+.fill.hot{background:var(--warn)}.fill.bad{background:var(--bad)}
+.ctl{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin:8px 0}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+button{background:#232a31;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:5px 10px;
+font:inherit;cursor:pointer}button:hover{border-color:var(--acc)}
+button.on{background:var(--acc);border-color:var(--acc);color:#04121f;font-weight:600}
+button.danger{border-color:#7a2b2b}button.danger.arm{background:var(--tx);color:#fff}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.val{color:var(--dim);font-variant-numeric:tabular-nums;min-width:60px;text-align:right}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 8px}
+kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;padding:0 4px;font-size:12px;color:var(--dim)}
+footer{padding:0 14px 12px;color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <span><span id="linkdot" class="dot"></span><b id="rig">–</b></span>
+  <span class="dim">RTT <span id="rtt">–</span></span>
+  <span class="dim">Audio <span id="audio">–</span></span>
+  <span style="display:flex;align-items:center;gap:6px" class="dim">Level
+    <span class="track" style="width:120px;display:inline-block"><span id="alevel" class="fill" style="display:block"></span></span>
+    <span id="aleveldb">–</span></span>
+  <span class="dim">CW <span id="cw">–</span></span>
+  <span class="dim">KX2 AF <span id="af">–</span></span>
+</header>
+<div id="warn"></div>
+<main>
+  <section class="panel">
+    <div class="row" style="justify-content:space-between;margin:0">
+      <div class="freq" id="freq">–</div><div id="txbadge">RX</div>
+    </div>
+    <div class="row">
+      <span class="tag on" id="mode">–</span>
+      <span class="tag" id="filter">–</span>
+      <span class="tag" id="rit">RIT</span>
+      <span class="tag" id="xit">XIT</span>
+      <span class="tag" id="split">SPLIT</span>
+      <span class="dim" id="vfob"></span>
+    </div>
+    <div class="row">
+      <span class="tag" id="att">ATT</span><span class="tag" id="pre">PRE</span>
+      <span class="tag" id="ant">ANT –</span><span class="tag" id="wpm">– WPM</span>
+    </div>
+    <h2 style="margin-top:14px">Meters</h2>
+    <div class="meter"><span id="slabel">S</span><div class="track"><div class="fill" id="m_s"></div></div><span class="val" id="v_s"></span></div>
+    <div class="meter"><span>SWR</span><div class="track"><div class="fill" id="m_swr"></div></div><span class="val" id="v_swr"></span></div>
+    <div class="meter"><span>ALC</span><div class="track"><div class="fill" id="m_alc"></div></div><span class="val" id="v_alc"></span></div>
+    <div class="meter"><span>COMP</span><div class="track"><div class="fill" id="m_comp"></div></div><span class="val" id="v_comp"></span></div>
+  </section>
+
+  <section class="panel">
+    <h2>Rig</h2>
+    <div class="ctl"><span>Power</span><div class="row" style="margin:0;flex-wrap:nowrap">
+      <input type="range" id="power" min="5" max="100" step="5"><span class="val" id="power_v">–</span></div></div>
+    <div class="ctl"><span>AGC</span><div class="seg" data-key="agc" data-vals="off,slow,fast"></div></div>
+    <div class="ctl"><span>NR <kbd>N</kbd></span><div class="seg" data-key="nr" data-vals="0,1,2" data-labels="off,NR1,NR2"></div></div>
+    <div class="ctl"><span>NR level</span><div class="row" style="margin:0;flex-wrap:nowrap">
+      <input type="range" id="nr_level" min="1" max="10" step="1"><span class="val" id="nr_level_v">–</span></div></div>
+    <div class="ctl"><span>NB <kbd>B</kbd></span><div class="seg" data-key="nb" data-vals="0,1,2" data-labels="off,NB1,NB2"></div></div>
+    <div class="ctl"><span>Notch <kbd>M</kbd></span><div class="seg" data-key="notch" data-vals="0,1,2" data-labels="off,auto,manual"></div></div>
+    <div class="ctl"><span>Notch freq</span><div class="row" style="margin:0;flex-wrap:nowrap">
+      <input type="range" id="notch_freq" min="0" max="127" step="1"><span class="val" id="notch_freq_v">–</span></div></div>
+    <div class="ctl"><span>Beat cancel</span><div class="seg" data-key="beat_cancel" data-vals="0,1,2" data-labels="off,BC1,BC2"></div></div>
+    <div class="ctl"><span>ATT / PRE</span><div class="seg">
+      <button id="b_att">ATT</button><button id="b_pre">PRE</button></div></div>
+    <div class="ctl"><span>Break-in delay</span><div class="row" style="margin:0;flex-wrap:nowrap">
+      <input type="range" id="break_in_delay" min="0" max="1000" step="50"><span class="val" id="break_in_delay_v">–</span></div></div>
+    <div class="ctl"><span>RF gain</span><div class="row" style="margin:0;flex-wrap:nowrap">
+      <input type="range" id="rf_gain" min="0" max="1" step="0.01"><span class="val" id="rf_gain_v">–</span></div></div>
+    <div class="ctl"><span>Antenna</span><div class="seg">
+      <button id="b_ant1">ANT 1</button><button id="b_ant2">ANT 2</button><button id="b_rxant">RX ANT</button></div></div>
+    <div class="ctl"><span>Tune</span><div class="seg">
+      <button id="b_cwtune">CW tune <kbd>T</kbd></button>
+      <button id="b_atu" class="danger" title="Transmits! Hold for 1 s">ATU tune (hold 1 s)</button></div></div>
+  </section>
+</main>
+<footer>Shows the rig's reported state. Keys: <kbd>T</kbd> CW tune · <kbd>N</kbd> NR · <kbd>B</kbd> NB · <kbd>M</kbd> notch · <kbd>A</kbd> AGC</footer>
+<script>
+"use strict";
+let S = {state:{}, meters:{}};
+const $ = id => document.getElementById(id);
+const post = (url, obj) => fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(obj)})
+  .then(r => r.json()).then(r => { if (!r.ok) console.warn(url, r.error); }).catch(e => console.warn(e));
+const set = (k, v) => post("/api/set", {k, v});
+const raw = d => post("/api/raw", {d});
+
+function fmtFreq(hz) {
+  if (typeof hz !== "number") return "–";
+  const s = String(Math.round(hz)).padStart(7, "0");
+  return (s.slice(0, -6) + "." + s.slice(-6, -3) + "." + s.slice(-3)).replace(/^0+(?=\d)/, "");
+}
+
+// segmented controls
+document.querySelectorAll(".seg[data-key]").forEach(el => {
+  const vals = el.dataset.vals.split(","), labels = (el.dataset.labels || el.dataset.vals).split(",");
+  vals.forEach((v, i) => {
+    const b = document.createElement("button");
+    b.textContent = labels[i]; b.dataset.v = v;
+    b.onclick = () => set(el.dataset.key, isNaN(v) ? v : Number(v));
+    el.appendChild(b);
+  });
+});
+function cycle(key) {
+  const el = document.querySelector('.seg[data-key="' + key + '"]'); if (!el) return;
+  const vals = el.dataset.vals.split(","); const cur = String(S.state[key] ?? vals[0]);
+  const next = vals[(vals.indexOf(cur) + 1) % vals.length];
+  set(key, isNaN(next) ? next : Number(next));
+}
+
+// sliders: send while dragging (throttled), show the rig's value when idle
+const dragging = {};
+function slider(id, fmt) {
+  const el = $(id); let t = 0;
+  el.addEventListener("input", () => {
+    dragging[id] = Date.now(); $(id + "_v").textContent = fmt(Number(el.value));
+    clearTimeout(t); t = setTimeout(() => set(id, Number(el.value)), 120);
+  });
+}
+slider("power", v => v + " W"); slider("nr_level", v => v); slider("notch_freq", v => v);
+slider("break_in_delay", v => v + " ms"); slider("rf_gain", v => Math.round(v * 100) + " %");
+
+$("b_att").onclick = () => set("att", S.state.att ? 0 : 1);
+$("b_pre").onclick = () => set("preamp", S.state.preamp ? 0 : 1);
+$("b_ant1").onclick = () => raw("AN199;");
+$("b_ant2").onclick = () => raw("AN299;");
+$("b_rxant").onclick = () => raw(String(S.state.antenna || "").charAt(1) === "1" ? "AN909;" : "AN919;");
+$("b_cwtune").onclick = () => raw("CA1;");
+// ATU tune transmits: only when the button is held for 1 s
+(function () {
+  const b = $("b_atu"); let t = 0;
+  const arm = e => { e.preventDefault(); b.classList.add("arm"); t = setTimeout(() => { raw("AC111;"); b.classList.remove("arm"); }, 1000); };
+  const disarm = () => { clearTimeout(t); b.classList.remove("arm"); };
+  b.addEventListener("pointerdown", arm); ["pointerup", "pointerleave", "pointercancel"].forEach(ev => b.addEventListener(ev, disarm));
+})();
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.ctrlKey || e.altKey || e.metaKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "t") raw("CA1;"); else if (k === "n") cycle("nr"); else if (k === "b") cycle("nb");
+  else if (k === "m") cycle("notch"); else if (k === "a") cycle("agc");
+});
+
+function bar(id, v, hot, bad) {
+  const f = $("m_" + id); const x = Math.max(0, Math.min(1, v || 0));
+  f.style.width = (x * 100) + "%";
+  f.className = "fill" + (bad !== undefined && x >= bad ? " bad" : hot !== undefined && x >= hot ? " hot" : "");
+}
+function sval(raw30) {                    // S-meter points 0-30 -> S units (approx.)
+  if (raw30 == null) return "";
+  if (raw30 <= 15) return "S" + Math.round(raw30 * 9 / 15);
+  return "S9+" + Math.round((raw30 - 15) * 60 / 15);
+}
+
+function render() {
+  const st = S.state, m = S.meters || {}, tx = !!st.tx;
+  $("linkdot").className = "dot" + (S.link && S.link.connected ? " ok" : "");
+  $("rig").textContent = S.rig || "no rig";
+  $("rtt").textContent = S.link && S.link.rtt_ms != null ? S.link.rtt_ms.toFixed(1) + " ms" : "–";
+  const a = S.audio || {};
+  $("audio").textContent = a.state + (a.live ? "" : a.state === "running" ? " (fixed vol.)" : "");
+  const lvl = a.level_db; $("aleveldb").textContent = lvl == null ? "–" : lvl.toFixed(0) + " dBFS";
+  const lf = $("alevel"); const x = lvl == null ? 0 : Math.max(0, Math.min(1, (lvl + 60) / 60));
+  lf.style.width = (x * 100) + "%"; lf.className = "fill" + (lvl > -3 ? " bad" : lvl > -9 ? " hot" : "");
+  $("cw").textContent = (S.cw || "–") + (S.keyer_busy ? " · sending" : "");
+  $("af").textContent = S.kx2 && S.kx2.af != null ? S.kx2.af : "–";
+  const w = [];
+  if (S.kx2 && S.kx2.power) w.push("KX2 output power is " + S.kx2.power + " – set 0 W / TX TEST, the KX2 must not transmit.");
+  if (S.kx2 && S.kx2.cwt) w.push("CWT (auto spot) is on at the KX2 – switch it off for remote operation.");
+  if (!(S.link && S.link.connected)) w.push("No connection to the remote rig.");
+  $("warn").style.display = w.length ? "block" : "none"; $("warn").textContent = w.join("  ");
+
+  $("freq").textContent = fmtFreq(st.split && tx ? st.freq_b : st.freq_a);
+  $("txbadge").textContent = st.atu_tuning ? "ATU" : tx ? "TX" : "RX"; $("txbadge").className = tx || st.atu_tuning ? "on" : "";
+  $("mode").textContent = (st.mode || "–") + (st.data ? "-D" : "");
+  const cwm = st.mode === "CW" || st.mode === "CW-R";
+  $("filter").textContent = st.filter_bw ? st.filter_bw + " Hz" + (cwm && st.filter_center ? " @" + st.filter_center : "") : "–";
+  $("rit").className = "tag" + (st.rit ? " on" : ""); $("rit").textContent = "RIT" + (st.rit && st.rit_offset ? " " + (st.rit_offset > 0 ? "+" : "") + st.rit_offset : "");
+  $("xit").className = "tag" + (st.xit ? " on" : "");
+  $("split").className = "tag" + (st.split ? " on" : "");
+  $("vfob").textContent = st.freq_b ? "B " + fmtFreq(st.freq_b) : "";
+  $("att").className = "tag" + (st.att ? " on" : ""); $("pre").className = "tag" + (st.preamp ? " on" : "");
+  const an = String(st.antenna || "");
+  $("ant").textContent = an ? "ANT " + an.charAt(0) + (an.charAt(1) === "1" ? " + RX" : "") : "ANT –";
+  $("wpm").textContent = (st.keyer_wpm || "–") + " WPM";
+  $("b_ant1").className = an.charAt(0) === "1" ? "on" : ""; $("b_ant2").className = an.charAt(0) === "2" ? "on" : "";
+  $("b_rxant").className = an.charAt(1) === "1" ? "on" : "";
+  $("b_att").className = st.att ? "on" : ""; $("b_pre").className = st.preamp ? "on" : "";
+  $("b_cwtune").className = st.cw_tune ? "on" : "";
+
+  $("slabel").textContent = tx ? "PO" : "S";
+  bar("s", tx ? m.po : m.s); $("v_s").textContent = tx ? Math.round((m.po || 0) * 100) + " %" : sval(m.s_raw);
+  bar("swr", tx ? m.swr : 0, 0.33, 0.66); $("v_swr").textContent = tx && m.swr_raw != null ? m.swr_raw : "";
+  bar("alc", tx ? m.alc : 0, 0.6, 0.9); $("v_alc").textContent = tx && m.alc_raw != null ? m.alc_raw : "";
+  bar("comp", tx ? m.comp : 0); $("v_comp").textContent = tx && m.comp_raw != null ? m.comp_raw : "";
+
+  document.querySelectorAll(".seg[data-key]").forEach(el => {
+    const cur = String(st[el.dataset.key]);
+    el.querySelectorAll("button").forEach(b => b.className = b.dataset.v === cur ? "on" : "");
+  });
+  $("power").max = S.max_power || 100;
+  const sl = [["power", v => v + " W"], ["nr_level", v => v], ["notch_freq", v => v],
+              ["break_in_delay", v => v + " ms"], ["rf_gain", v => Math.round(v * 100) + " %"]];
+  sl.forEach(([id, fmt]) => {
+    if (Date.now() - (dragging[id] || 0) < 1500 || st[id] == null) return;
+    $(id).value = st[id]; $(id + "_v").textContent = fmt(st[id]);
+  });
+}
+
+function connect() {
+  const es = new EventSource("/events");
+  es.onmessage = ev => { S = JSON.parse(ev.data); render(); };
+  es.onerror = () => { es.close(); S.link = {connected: false}; render(); setTimeout(connect, 1000); };
+}
+connect();
+</script>
+</body>
+</html>

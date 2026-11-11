@@ -35,7 +35,7 @@ def test_pipelines_use_the_measured_low_latency_settings():
     assert tx_pipeline({"source": "pulse:abc"}, "h", 1).startswith("pulsesrc device=abc")
     rx = rx_pipeline({"port": 7356, "jitter_ms": 40, "sink": "pulse"}, 0.5)
     assert "rtpjitterbuffer latency=40 do-lost=true" in rx and "opusdec plc=true" in rx
-    assert "volume name=vol volume=0.5" in rx
+    assert "level name=lvl interval=100000000 ! volume name=vol volume=0.5" in rx
     assert rx.endswith("pulsesink buffer-time=20000 latency-time=5000")
 
 

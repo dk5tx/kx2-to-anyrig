@@ -24,6 +24,7 @@ from .kx2 import KX2Link
 from .link import RemoteLink
 from .router import Router
 from .sync import Sync
+from .webui.server import WebUI
 from .winkeyer import WinKeyerEmulator
 
 log = logging.getLogger("kx2-local")
@@ -72,6 +73,10 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
                 audio.set_af(value)                  # KX2 AF knob = laptop volume
         state.subscribe(_af)
 
+    webui: WebUI | None = None
+    if cfg["webui"].get("enabled", True):
+        webui = WebUI(cfg["webui"], state, sync=sync, link=link, audio=audio, winkeyer=wk)
+
     stop = stop or asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -92,6 +97,12 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
         check_wine_com(cfg["wintest"]["winkeyer_pty_link"], "COM2")
     if audio:
         audio.start()
+    if webui:
+        try:
+            await webui.start()
+        except OSError as exc:
+            log.error("web UI not started: %s", exc)
+            webui = None
     if link:
         link.start()
         log.info("connecting to remote %s:%s", cfg["remote"]["host"], cfg["remote"]["port"])
@@ -105,6 +116,8 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
             await link.stop()
         if audio:
             await audio.stop()
+        if webui:
+            await webui.stop()
         if wk:
             await wk.stop()
         await emu.stop()

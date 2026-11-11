@@ -113,7 +113,16 @@ laptop volume (needs `python3-gi`, normally installed on Mint; without it the vo
 - UDP port 7356 must be open on the laptop (Mint: ufw is off by default).
 - `kx2-local --no-audio` switches it off; `audio: {source: test}` on the remote sends a tone.
 
-Not yet: web UI (M6).
+### Milestone M6: web UI and safety
+
+kx2-local serves a page at **http://127.0.0.1:8073/** (standard library only, no extra package):
+frequency, mode, filter, RIT/XIT, TX, meters (S/PO, SWR, ALC, COMP), link RTT, audio level, KX2
+warnings, and controls for power, AGC, NR (+level), NB, notch (+frequency), beat cancel, ATT/PRE,
+break-in delay, RF gain, antenna, CW tune and ATU tune (hold 1 s – it transmits). Keys: T CW tune,
+N NR, B NB, M notch, A AGC. It always shows what the rig reports, not the last command.
+
+Safety on the remote: link silent > 1 s -> `KY0;`/`RX;`/DTR released and CW blocked until the next
+connect; continuous TX longer than `safety.tx_timeout_s` (60 s) -> CW aborted, `RX;`.
 
 ## Idea
 

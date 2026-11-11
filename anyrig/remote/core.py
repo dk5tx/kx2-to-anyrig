@@ -32,6 +32,8 @@ class RemoteServer:
         self.server: asyncio.base_events.Server | None = None
         self.link_timeout = cfg["safety"]["link_timeout_ms"] / 1000.0
         self.max_power = int(cfg["safety"].get("max_power_w", 100))
+        self.tx_timeout = float(cfg["safety"].get("tx_timeout_s", 60))
+        self._tx_since: float | None = None
         self._tasks: list[asyncio.Task] = []
         self._meters: dict[str, Any] | None = None
         self._last_meter_send = 0.0
@@ -85,7 +87,7 @@ class RemoteServer:
         log.info("client connected: %s", conn.peer)
         conn.send({"t": "hello", "role": "remote", "version": protocol.VERSION,
                    "rig": self.rig.profile.get("name"), "caps": sorted(self.rig.capabilities()),
-                   "cw": "dtr" if self.cw_method == "dtr" else "text"})
+                   "cw": "dtr" if self.cw_method == "dtr" else "text", "max_power": self.max_power})
         for k, v in list(self.rig.state.items()):
             conn.send({"t": "state", "k": k, "v": v, "src": "rig"})
         conn.send({"t": "snapshot_done"})
@@ -183,10 +185,25 @@ class RemoteServer:
         while True:
             await asyncio.sleep(0.1)
             c = self.conn
-            if c and not c.closed and time.monotonic() - c.last_rx > self.link_timeout:
-                log.error("control link silent for %.1f s – unkeying", time.monotonic() - c.last_rx)
+            now = time.monotonic()
+            if c and not c.closed and now - c.last_rx > self.link_timeout:
+                log.error("control link silent for %.1f s – unkeying", now - c.last_rx)
                 self._safety("link timeout")
                 c.close()
+            # TX timeout (CLAUDE.md 4.12): continuous TX longer than tx_timeout_s -> unkey
+            if self.rig.state.get("tx"):
+                if self._tx_since is None:
+                    self._tx_since = now
+                elif self.tx_timeout and now - self._tx_since > self.tx_timeout:
+                    log.error("TX for more than %.0f s – TX timeout, unkeying", self.tx_timeout)
+                    try:
+                        self.cw.abort()
+                        self.rig.unkey()
+                    except Exception as exc:
+                        log.error("TX timeout unkey failed: %s", exc)
+                    self._tx_since = now            # repeat after another timeout if still TX
+            else:
+                self._tx_since = None
 
     def _safety(self, reason: str) -> None:
         try:

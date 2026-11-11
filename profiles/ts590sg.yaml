@@ -13,7 +13,7 @@ init: ["AI2;", "FR0;"]
 # restored / sent on close (safety first)
 shutdown: ["KY0;", "AI0;"]
 # queried once after init to build the state (mode-dependent ones may answer '?', that is fine)
-initial_queries: [FA, FB, FR, FT, MD, DA, IF, RA, PA, NB, NR, NT, BC, GC, KS, SD, PC, VX, AC, FW, IS, SH, SL, RG, AN, FL]
+initial_queries: [FA, FB, FR, FT, MD, DA, IF, RA, PA, NB, NR, NT, BP, BC, GC, KS, SD, PC, VX, AC, FW, IS, SH, SL, RG, AN, FL]
 # frames to ignore (undocumented quick-menu indicator)
 ignore: [RS, EX, UR, XI, FS, PR, EM]
 
@@ -36,6 +36,7 @@ commands:
   nr_level:    {cmd: RL, type: int, set: "RL{v:02d};"}
   beat_cancel: {cmd: BC, type: int, set: "BC{v:d};"}
   notch:       {cmd: NT, type: int, slice: [0, 1], set: "NT{v:d}0;"}
+  notch_freq:  {cmd: BP, type: int, set: "BP{v:03d};"}          # manual notch position 000-127
   agc:         {cmd: GC, type: enum, map: {"0": "off", "1": "slow", "2": "fast"}, set: "GC{v};"}
   keyer_wpm:   {cmd: KS, type: int, set: "KS{v:03d};"}
   break_in_delay: {cmd: SD, type: int, set: "SD{v:04d};"}

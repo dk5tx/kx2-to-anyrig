@@ -143,7 +143,7 @@ anyrig/
   common/      protocol.py (control messages), config.py, log.py, morse.py
   local/       kx2.py (KX2 link + poll scheduler), k3emu.py (Win-Test CAT pty),
                winkeyer.py (WinKeyer pty), router.py (command routing), sync.py,
-               audio_rx.py, webui/ (aiohttp + static html/js), main.py
+               audio_rx.py, webui/ (stdlib HTTP + Server-Sent Events, one html file), main.py
   remote/      core.py (state, sync, safety), cwtext.py (KY chunking / DTR fallback),
                audio_tx.py, main.py
   drivers/     base.py (abstract Rig), kenwood.py (first), hamlib.py (later), icom.py (later), yaesu.py (later)
@@ -155,7 +155,7 @@ docs/
 ```
 
 Dependencies (all available as Debian/Mint packages, prefer apt):
-`python3-yaml`, `python3-aiohttp` (web UI only), GStreamer
+`python3-yaml`, GStreamer (web UI uses the standard library only – no aiohttp)
 (`gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pipewire`).
 No other runtime dependencies without a good reason. Tests: `python3-pytest`.
 Serial ports and ptys use our own termios wrapper (`anyrig/common/serialport.py`, Linux only) – no pyserial.
