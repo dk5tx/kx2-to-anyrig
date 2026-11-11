@@ -1,0 +1,15 @@
+# Shack PC: rig control, CW keying, RX audio. With "loginctl enable-linger" it starts at boot
+# without anybody logging in. Logs: journalctl --user -u anyrig-remote -f
+[Unit]
+Description=anyrig-remote (home rig for kx2-local)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kx2-to-anyrig
+ExecStart=/usr/bin/python3 -m anyrig.remote -c %h/.config/anyrig/remote.yaml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

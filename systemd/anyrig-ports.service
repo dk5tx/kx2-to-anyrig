@@ -1,0 +1,14 @@
+# Laptop: keeps Win-Test's virtual COM ports (/tmp/anyrig-com1, /tmp/anyrig-com2) open, so
+# kx2-local can be restarted without REOPEN in Win-Test. Start it before Win-Test (at login).
+[Unit]
+Description=anyrig virtual COM ports for Win-Test
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kx2-to-anyrig
+ExecStart=/usr/bin/python3 -m anyrig.local.ports -c %h/.config/anyrig/local.yaml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

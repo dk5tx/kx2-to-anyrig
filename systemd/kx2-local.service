@@ -1,0 +1,16 @@
+# Laptop: KX2 control head, Win-Test K3 + WinKeyer emulation, RX audio, web UI.
+# Logs: journalctl --user -u kx2-local -f
+[Unit]
+Description=kx2-local (KX2 control head for the remote rig)
+Wants=anyrig-ports.service
+After=anyrig-ports.service sound.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kx2-to-anyrig
+ExecStart=/usr/bin/python3 -m anyrig.local -c %h/.config/anyrig/local.yaml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

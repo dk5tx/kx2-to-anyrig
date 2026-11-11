@@ -134,15 +134,30 @@ class SerialPort(_FdPort):
 
 
 class PtyPort(_FdPort):
-    """A pseudo terminal. ``link`` is a symlink to the slave device for other programs."""
+    """A pseudo terminal. ``link`` is a symlink to the slave device for other programs.
 
-    def __init__(self, link: str | None):
+    If ``holder_socket`` is set and anyrig-ports (``anyrig/local/ports.py``) runs and holds
+    ``link``, its pty is used instead of a new one: it survives restarts of this program."""
+
+    holder_socket: str | None = None            # set by kx2-local (config wintest.port_holder)
+
+    def __init__(self, link: str | None, use_holder: bool = True):
         super().__init__()
         self.link = link
+        self.use_holder = use_holder
         self.slave_name: str | None = None
         self._slave_fd: int | None = None
+        self.held = False                       # pty borrowed from anyrig-ports
+        self._holder: object | None = None
 
     def open(self) -> None:
+        if self.link and self.use_holder and PtyPort.holder_socket:
+            from ..local.ports import request_port   # noqa: WPS433 (avoid import cycle)
+            got = request_port(self.link, PtyPort.holder_socket)
+            if got:
+                self.fd, self.slave_name, self._holder = got
+                self.held = True
+                return
         master, slave = pty.openpty()
         tty.setraw(slave)
         os.set_blocking(master, False)
@@ -161,6 +176,10 @@ class PtyPort(_FdPort):
 
     def close(self) -> None:
         super().close()
+        if self._holder is not None:            # give the port back, it stays open for Win-Test
+            self._holder.close()
+            self._holder = None
+            return
         if self._slave_fd is not None:
             os.close(self._slave_fd)
             self._slave_fd = None

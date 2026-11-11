@@ -18,10 +18,12 @@ from .. import __version__
 from ..common import config, log as logsetup
 from ..common.log import TrafficLog
 from ..common.state import State
+from ..common.serialport import PtyPort
 from .audio_rx import AudioReceiver
 from .k3emu import K3Emulator
 from .kx2 import KX2Link
 from .link import RemoteLink
+from .ports import default_socket
 from .router import Router
 from .sync import Sync
 from .webui.server import WebUI
@@ -31,6 +33,8 @@ log = logging.getLogger("kx2-local")
 
 
 async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
+    if cfg["wintest"].get("port_holder", True):
+        PtyPort.holder_socket = cfg["wintest"].get("port_socket") or default_socket()
     state = State()
     traffic = TrafficLog(cfg["wintest"].get("traffic_log") or None)
     kx2 = KX2Link(cfg["kx2"], state, traffic)
@@ -118,6 +122,11 @@ async def run(cfg: dict, stop: asyncio.Event | None = None) -> None:
         link.start()
         log.info("connecting to remote %s:%s", cfg["remote"]["host"], cfg["remote"]["port"])
     check_wine_com(cfg["wintest"]["cat_pty_link"], "COM1")
+    if emu.port.held:
+        log.info("virtual COM ports from anyrig-ports: Win-Test keeps them across restarts")
+    else:
+        log.info("own virtual COM ports – after a restart of kx2-local press REOPEN in Win-Test "
+                 "(or run anyrig-ports, see README)")
     log.info("kx2-local %s running (router default: %s). Ctrl+C to stop.", __version__, router.default)
     _warn_kx2(state)
     try:

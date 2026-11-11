@@ -2,18 +2,19 @@
 # Copy to config/local.yaml and adjust. Missing keys use the built-in defaults.
 
 remote:
-  host: 192.168.178.50          # shack PC; leave empty for local-only mode
+  host: 192.168.178.50          # shack PC (IP or name, e.g. shack.fritz.box); leave empty for local-only mode
   port: 7355
 
 kx2:
-  port: /dev/ttyUSB0
+  port: /dev/ttyUSB0            # better: /dev/serial/by-id/usb-… (stable across reboots)
   baud: 38400
   k31: true                     # extended mode: NR/notch/CWT become visible
 
 wintest:
   cat_pty_link: /tmp/anyrig-com1      # link ~/.wine/dosdevices/com1 to this
   winkeyer_pty_link: /tmp/anyrig-com2 # link ~/.wine/dosdevices/com2 to this (milestone M4)
-  cq_repeat_s: null          # Win-Test CQ repeat interval [s], e.g. 3.0 – keeps the first pause right
+  cq_repeat_s: null          # only for cw method cat (KY): Win-Test CQ repeat interval [s], e.g. 3.0
+  port_holder: true          # take the ports from anyrig-ports if it runs (no REOPEN after a restart)
   traffic_log: anyrig-wintest.log     # every frame from/to Win-Test; empty = off
 
 router:

@@ -24,6 +24,8 @@ LOCAL_DEFAULTS: dict[str, Any] = {
         "winkeyer_pty_link": "/tmp/anyrig-com2",
         "traffic_log": "anyrig-wintest.log",
         "cq_repeat_s": None,        # Win-Test CQ repeat interval, if used (keeps the first pause right)
+        "port_holder": True,        # use anyrig-ports if it runs (ports survive kx2-local restarts)
+        "port_socket": None,        # its Unix socket (default $XDG_RUNTIME_DIR/anyrig-ports.sock)
     },
     "router": {
         # where commands from Win-Test go that the K3 emulation does not handle itself:
