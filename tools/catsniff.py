@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-catsniff.py - schneidet die serielle Kommunikation zwischen Win-Test (Wine) und dem Funkgeraet mit
+catsniff.py - captures the serial traffic between Win-Test (Wine) and the rig
 
-Prinzip: Das Skript legt einen virtuellen Port (pty) an und verbindet ihn mit dem echten Port.
-Win-Test wird auf den virtuellen Port umgebogen; alles wird 1:1 durchgereicht und mit
-Zeitstempel protokolliert.
+How: the script creates a virtual port (pty) and connects it to the real port. Wine's COM1 is
+pointed to the virtual port; everything is passed through unchanged and logged with time stamps.
 
-    Win-Test (COM1) -> ~/.wine/dosdevices/com1 -> /tmp/catsniff-com1 (pty) -> catsniff -> /dev/ttyUSB0 -> KX2
+    Win-Test (COM1) -> Wine -> /tmp/catsniff-com1 (pty) -> catsniff -> /dev/ttyUSB0 -> KX2
 
-Einschraenkung: Ein pty hat keine Steuerleitungen. CW-Tastung und PTT ueber DTR/RTS von Win-Test
-kommen waehrend des Mitschnitts NICHT am Geraet an. CAT funktioniert normal.
+Limitation: a pty has no modem lines. CW keying and PTT on DTR/RTS from Win-Test do NOT reach
+the rig while capturing. CAT works normally.
 
-Nur Python-Standardbibliothek.
+Python standard library only.
 
-Aufruf (Win-Test vorher beenden):
+Usage (close Win-Test first):
     python3 catsniff.py                                  # KX2: /dev/ttyUSB0, 38400 Bd
     python3 catsniff.py --port /dev/ttyUSB1 --baud 115200
-    python3 catsniff.py --hex                            # Binaerprotokolle (z. B. WinKeyer)
+    python3 catsniff.py --hex                            # binary protocols (e.g. WinKeyer)
 
-Dann in einem zweiten Terminal Win-Test umbiegen (das Skript zeigt die Befehle an),
-Win-Test starten, normal bedienen, am Ende Win-Test beenden und catsniff mit Strg+C stoppen.
+Then point Wine's COM1 to the virtual port (the script prints the command), start Win-Test,
+use it normally, close Win-Test and stop catsniff with Ctrl+C.
 """
 import argparse
 import os
@@ -60,7 +59,7 @@ def open_real(port, baud):
 
 
 class Logger:
-    """Protokolliert je Richtung. Textmodus: ein Eintrag pro ';'-Befehl. Hexmodus: rohe Bloecke."""
+    """Logs each direction. Text mode: one line per ';' command. Hex mode: raw blocks."""
 
     def __init__(self, f, hexmode, label_pc, label_rig):
         self.f = f
@@ -86,23 +85,23 @@ class Logger:
     def flush(self):
         for label, b in self.buf.items():
             if b:
-                self.f.write("%s %s %s  (ohne ';')\n" % (stamp(), label, esc(b)))
+                self.f.write("%s %s %s  (no ';')\n" % (stamp(), label, esc(b)))
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Mitschnitt serieller CAT-Kommunikation ueber einen pty")
-    ap.add_argument("--port", default="/dev/ttyUSB0", help="echter Port (Standard /dev/ttyUSB0)")
+    ap = argparse.ArgumentParser(description="capture serial CAT traffic through a pty")
+    ap.add_argument("--port", default="/dev/ttyUSB0", help="real port (default /dev/ttyUSB0)")
     ap.add_argument("--baud", type=int, default=38400)
-    ap.add_argument("--link", default="/tmp/catsniff-com1", help="Pfad des virtuellen Ports")
+    ap.add_argument("--link", default="/tmp/catsniff-com1", help="path of the virtual port")
     ap.add_argument("--log", default="catsniff.log")
-    ap.add_argument("--hex", action="store_true", help="Hex-Ausgabe statt ';'-Befehle")
-    ap.add_argument("--quiet", action="store_true", help="nichts auf dem Bildschirm ausgeben")
+    ap.add_argument("--hex", action="store_true", help="hex output instead of ';' commands")
+    ap.add_argument("--quiet", action="store_true", help="print nothing on the screen")
     args = ap.parse_args()
 
     try:
         rfd = open_real(args.port, args.baud)
     except OSError as e:
-        sys.exit("Port %s: %s  (laeuft Win-Test noch?)" % (args.port, e))
+        sys.exit("port %s: %s  (is Win-Test still running?)" % (args.port, e))
 
     mfd, sfd = pty.openpty()
     tty.setraw(sfd)
@@ -116,16 +115,16 @@ def main():
         sys.exit("Link %s: %s" % (args.link, e))
 
     com = os.path.expanduser("~/.wine/dosdevices/com1")
-    print("Virtueller Port: %s  ->  %s" % (args.link, slave_name))
-    print("Echter Port:     %s @ %d Bd" % (args.port, args.baud))
+    print("virtual port: %s  ->  %s" % (args.link, slave_name))
+    print("real port:    %s @ %d Bd" % (args.port, args.baud))
     print()
-    print("Win-Test umbiegen (zweites Terminal, Win-Test beendet):")
-    print("  mv %s %s.orig" % (com, com))
-    print("  ln -s %s %s" % (args.link, com))
-    print("Danach wiederherstellen:")
-    print("  rm %s && mv %s.orig %s" % (com, com, com))
+    print("point Wine's COM1 to it (Win-Test closed):")
+    print("  wine reg add 'HKLM\\Software\\Wine\\Ports' /v COM1 /t REG_SZ /d %s /f && wineserver -k"
+          % args.link)
+    print("afterwards back to the real port:")
+    print("  wine reg delete 'HKLM\\Software\\Wine\\Ports' /v COM1 /f && wineserver -k")
     print()
-    print("Mitschnitt laeuft -> %s   (Ende mit Strg+C)" % args.log)
+    print("capturing -> %s   (stop with Ctrl+C)" % args.log)
 
     logf = open(args.log, "a", buffering=1, encoding="utf-8")
     logf.write("\n# --- Start %s  %s @ %d Bd  %s ---\n"
@@ -147,7 +146,7 @@ def main():
                 try:
                     data = os.read(mfd, 4096)
                 except (BlockingIOError, OSError):
-                    data = b""         # EIO, solange Win-Test den Port nicht offen hat
+                    data = b""         # EIO while Win-Test does not have the port open
                 if data:
                     os.write(rfd, data)
                     log.feed("PC>", data)
@@ -165,18 +164,18 @@ def main():
             if not args.quiet and time.time() - last_status > 1.0:
                 last_status = time.time()
                 sys.stdout.write("\r  PC>RIG: %6d   RIG>PC: %6d  %s"
-                                 % (log.count["PC>"], log.count["<RIG"], "Bytes" if args.hex else "Befehle"))
+                                 % (log.count["PC>"], log.count["<RIG"], "bytes" if args.hex else "commands"))
                 sys.stdout.flush()
     finally:
         log.flush()
-        logf.write("# --- Ende %s ---\n" % time.strftime("%H:%M:%S"))
+        logf.write("# --- end %s ---\n" % time.strftime("%H:%M:%S"))
         logf.close()
         try:
             os.remove(args.link)
         except OSError:
             pass
         os.close(rfd)
-        print("\nBeendet. Log: %s" % args.log)
+        print("\nstopped. Log: %s" % args.log)
 
 
 if __name__ == "__main__":

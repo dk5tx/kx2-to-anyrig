@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Einfacher KX2-Simulator auf einem virtuellen Port - zum Ausprobieren von kx2probe.py ohne Geraet.
-Start:  python3 kx2_sim.py   -> gibt den Portnamen aus, dann: python3 kx2probe.py --port <name>
-Die Antworten sind vereinfacht und nicht 1:1 wie beim echten KX2."""
+"""Simple KX2 simulator on a virtual port - for trying kx2probe.py without a rig.
+Start:  python3 kx2_sim.py   -> prints the port name, then: python3 kx2probe.py --port <name>
+The replies are simplified and not exactly like a real KX2."""
 import os, pty, random, select, sys, time
-DELAY = float(sys.argv[1]) / 1000 if len(sys.argv) > 1 else 0.0   # Antwortzeit in ms, z. B. 25
+DELAY = float(sys.argv[1]) / 1000 if len(sys.argv) > 1 else 0.0   # reply time in ms, e.g. 25
 
 state = {"FA": "00014025000", "FB": "00014030000", "MD": "3", "BN": "05", "BW": "0050",
          "IS": " 0600", "RT": "0", "XT": "0", "RO": "+0000", "RA": "00", "PA": "0", "AG": "030",
          "RG": "250", "SQ": "000", "NB": "0", "AP": "0", "KS": "026", "CW": "60", "MG": "030",
          "CP": "010", "PC": "005", "VX": "0", "FT": "0", "LK": "0", "TQ": "0", "SM": "0005",
          "IC": "\x40\x01\x00\x00\x00", "IF": "00014025000     +000000 0003000001 ", "OM": "--------01"}
-AI_REPORTS = {"FA", "MD", "BW", "RT", "RO", "AG"}       # was der Simulator per AI meldet
+AI_REPORTS = {"FA", "MD", "BW", "RT", "RO", "AG"}       # what the simulator reports by AI
 master, slave = pty.openpty()
-print("Simulierter KX2 auf:", os.ttyname(slave), flush=True)
+print("simulated KX2 on:", os.ttyname(slave), flush=True)
 ai, buf, t_next = 0, b"", time.time() + 1.5
 while True:
     r, _, _ = select.select([master], [], [], 0.05)
@@ -30,7 +30,7 @@ while True:
                 else:
                     os.write(master, ("AI%d;" % ai).encode())
             elif cmd == "DS":
-                pass                                   # simuliert: keine Antwort
+                pass                                   # simulated: no reply
             elif cmd in state:
                 if arg:
                     state[cmd] = arg

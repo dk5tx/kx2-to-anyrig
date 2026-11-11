@@ -1,38 +1,35 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-kx2probe.py - CAT-Testwerkzeug fuer den Elecraft KX2
+kx2probe.py - CAT test tool for the Elecraft KX2 (and the TS-590SG)
 
-Zeigt alle abgefragten Einstellungen des KX2 in einer Text-Oberflaeche und
-protokolliert fuer jede einzelne, ob Aenderungen per Auto-Info (AI) vom Geraet
-gemeldet oder nur durch Polling erkannt wurden.
+Shows every queried setting of the rig in a text UI and records for each one whether
+changes were reported by the rig itself (auto information, AI) or only found by polling.
 
-Nur Python-Standardbibliothek (curses, termios) - keine Installation noetig.
+Python standard library only (curses, termios) - nothing to install.
 
-Aufruf:
+Usage:
     python3 kx2probe.py                         # /dev/ttyUSB0, 38400 Bd, AI2
     python3 kx2probe.py --port /dev/ttyUSB1 --ai 1
-    python3 kx2probe.py --init "K31;"           # Befehle beim Start senden
-    python3 kx2probe.py --rig ts590             # TS-590SG an /dev/ttyUSB1, 115200 Bd
-    python3 kx2probe.py --af-to-pc              # AF-Poti steuert PC-Lautstaerke
-    python3 kx2probe.py --prio BW=fast,KS=normal   # Prioritaeten einzelner Werte aendern
+    python3 kx2probe.py --init "K31;"           # send commands at start
+    python3 kx2probe.py --rig ts590             # TS-590SG on /dev/ttyUSB1, 115200 Bd
+    python3 kx2probe.py --af-to-pc              # AF knob sets the PC volume
+    python3 kx2probe.py --prio BW=fast,KS=normal   # change the priority of single values
 
-Tasten:
-    q        Ende (stellt den urspruenglichen AI-Modus wieder her)
-    p        Polling an/aus  -> bei "PAUSE" sieht man nur, was AI von selbst meldet
-    a        AI-Modus 0 -> 1 -> 2 durchschalten
-    c        Zaehler und Aenderungsliste zuruecksetzen
-    m        Markierung setzen (fortlaufende Nummer in Liste und Log, fuer Testschritte)
-    r        als "nicht unterstuetzt" markierte Befehle erneut versuchen
-    Pfeile / Bild auf/ab   Tabelle scrollen
+Keys:
+    q        quit (restores the original AI mode)
+    p        polling on/off  -> with "PAUSE" you only see what AI reports by itself
+    a        cycle AI mode 0 -> 1 -> 2
+    c        reset counters and the list of changes
+    m        set a marker (running number in the list and the log, for test steps)
+    r        retry commands marked "not supported"
+    arrows / PgUp/PgDn   scroll the table
 
-Alle Rohdaten (gesendet/empfangen, mit Zeitstempel und Einordnung) landen
-zusaetzlich in kx2probe.log.
+All raw data (sent/received, with time stamp and classification) also goes to kx2probe.log.
 
-Die Befehlsliste orientiert sich am Elecraft-Programmierhandbuch (K3/KX3/KX2).
-Nicht jeder Befehl wird vom KX2 unterstuetzt - genau das zeigt das Tool:
-Befehle, die dreimal mit "?" oder gar nicht beantwortet werden, werden als
-"nicht unterstuetzt" markiert und nicht mehr abgefragt.
+The command list follows the Elecraft programmer's reference (K3/KX3/KX2). Not every command
+is supported by the KX2 - that is exactly what the tool shows: commands answered three times
+with "?" or not at all are marked "not supported" and no longer queried.
 """
 
 import argparse
@@ -50,113 +47,113 @@ import time
 from collections import deque
 
 # ---------------------------------------------------------------------------
-# Parameterliste - beliebig erweiterbar.
+# Parameter list - extend as you like.
 #   kind : freq | int | bool | enum | raw | bits
-#   min/max : Bereich fuer die Balkenanzeige (wird automatisch erweitert,
-#             fehlt er, wird er aus den beobachteten Werten gebildet)
-#   scale : Faktor Rohwert -> Anzeigewert
-#   once  : nur einmal beim Start abfragen
-#   quiet : Aenderungen zaehlen, aber nicht in die Aenderungsliste schreiben
-#           (fuer Werte, die sich staendig aendern)
+#   min/max : range of the bar display (widened automatically;
+#             if missing, taken from the values seen)
+#   scale : factor raw value -> displayed value
+#   once  : query only once at start
+#   quiet : count changes but keep them out of the list of changes
+#           (for values that change all the time)
 # ---------------------------------------------------------------------------
 PARAMS = [
     dict(cmd="FA", name="VFO A", kind="freq"),
     dict(cmd="FB", name="VFO B", kind="freq"),
-    dict(cmd="MD", name="Betriebsart", kind="enum",
+    dict(cmd="MD", name="Mode", kind="enum",
          enum={"1": "LSB", "2": "USB", "3": "CW", "4": "FM", "5": "AM",
                "6": "DATA", "7": "CW-REV", "9": "DATA-REV"}),
     dict(cmd="BN", name="Band", kind="int"),
-    dict(cmd="BW", name="Filterbandbreite", kind="int", scale=10, unit="Hz", min=50, max=4000),
-    dict(cmd="IS", name="IF-Shift / Mitte", kind="int", unit="Hz"),
+    dict(cmd="BW", name="Filter bandwidth", kind="int", scale=10, unit="Hz", min=50, max=4000),
+    dict(cmd="IS", name="IF shift / centre", kind="int", unit="Hz"),
     dict(cmd="RT", name="RIT", kind="bool"),
     dict(cmd="XT", name="XIT", kind="bool"),
-    dict(cmd="RO", name="RIT/XIT-Offset", kind="int", unit="Hz", min=-1000, max=1000),
-    dict(cmd="RA", name="Abschwaecher (ATT)", kind="bool"),
-    dict(cmd="PA", name="Vorverstaerker", kind="bool"),
-    dict(cmd="AG", name="AF-Gain (Lautst.)", kind="int", min=0, max=60),
-    dict(cmd="RG", name="RF-Gain", kind="int"),
+    dict(cmd="RO", name="RIT/XIT offset", kind="int", unit="Hz", min=-1000, max=1000),
+    dict(cmd="RA", name="Attenuator (ATT)", kind="bool"),
+    dict(cmd="PA", name="Preamp", kind="bool"),
+    dict(cmd="AG", name="AF gain (volume)", kind="int", min=0, max=60),
+    dict(cmd="RG", name="RF gain", kind="int"),
     dict(cmd="SQ", name="Squelch", kind="int"),
     dict(cmd="NB", name="Noise Blanker", kind="bool"),
-    dict(cmd="NL", name="NB-Pegel", kind="raw"),
-    dict(cmd="AP", name="Audio-Peak-Filter", kind="bool"),
-    dict(cmd="KS", name="Keyer-Tempo", kind="int", unit="WPM", min=8, max=50),
+    dict(cmd="NL", name="NB level", kind="raw"),
+    dict(cmd="AP", name="Audio peak filter", kind="bool"),
+    dict(cmd="KS", name="Keyer speed", kind="int", unit="WPM", min=8, max=50),
     dict(cmd="CW", name="CW-Pitch", kind="int", scale=10, unit="Hz", min=250, max=950),
-    dict(cmd="ML", name="Mithoerpegel", kind="int"),
+    dict(cmd="ML", name="Sidetone level", kind="int"),
     dict(cmd="MG", name="Mic-Gain", kind="int", min=0, max=80),
-    dict(cmd="CP", name="Kompression", kind="int", min=0, max=40),
-    dict(cmd="PC", name="Sendeleistung", kind="raw"),
+    dict(cmd="CP", name="Compression", kind="int", min=0, max=40),
+    dict(cmd="PC", name="Power", kind="raw"),
     dict(cmd="VX", name="VOX", kind="bool"),
-    dict(cmd="FT", name="Split (TX auf VFO B)", kind="bool"),
-    dict(cmd="LK", name="VFO-Sperre", kind="bool"),
-    dict(cmd="TQ", name="Senden aktiv", kind="bool"),
+    dict(cmd="FT", name="Split (TX on VFO B)", kind="bool"),
+    dict(cmd="LK", name="VFO lock", kind="bool"),
+    dict(cmd="TQ", name="Transmitting", kind="bool"),
     dict(cmd="SM", name="S-Meter", kind="int", quiet=True),
-    dict(cmd="IC", name="Icon-/Statusbits", kind="bits"),
-    dict(cmd="DS", name="Displayinhalt", kind="raw", quiet=True),
-    dict(cmd="IF", name="IF-Sammelstatus", kind="raw", quiet=True),
-    dict(cmd="OM", name="Optionen / Modell", kind="raw", once=True),
-    # vom KX2 per Auto-Info gemeldet (im Test vom 08.11. gefunden)
-    dict(cmd="GT", name="AGC", kind="enum", enum={"002": "schnell", "004": "langsam"}),
-    dict(cmd="AN", name="Antenne", kind="int"),
-    dict(cmd="DT", name="DATA-Untermodus", kind="enum",
+    dict(cmd="IC", name="Icon/status bits", kind="bits"),
+    dict(cmd="DS", name="Display content", kind="raw", quiet=True),
+    dict(cmd="IF", name="IF status", kind="raw", quiet=True),
+    dict(cmd="OM", name="Options / model", kind="raw", once=True),
+    # reported by the KX2 by auto information (found in the test of 8 Nov)
+    dict(cmd="GT", name="AGC", kind="enum", enum={"002": "fast", "004": "slow"}),
+    dict(cmd="AN", name="Antenna", kind="int"),
+    dict(cmd="DT", name="DATA sub-mode", kind="enum",
          enum={"0": "DATA A", "1": "AFSK A", "2": "FSK D", "3": "PSK D"}),
     dict(cmd="FR", name="RX-VFO", kind="enum", enum={"0": "A", "1": "B"}),
-    dict(cmd="FW", name="Filter (K2-Format)", kind="raw"),
+    dict(cmd="FW", name="Filter (K2 format)", kind="raw"),
 ]
 
 # ---------------------------------------------------------------------------
 # TS-590SG (Kenwood PC Control Command Reference B5A-0316-00).
-#   query   : was zum Abfragen gesendet wird (Standard: cmd + ";")
-#   answers : Antwortkennungen, die zu dieser Abfrage gehoeren (RM liefert 3 Zeilen)
-#   poll    : False = wird nur ueber die Antwort einer anderen Abfrage gefuellt
+#   query   : what is sent to query it (default: cmd + ";")
+#   answers : reply prefixes that belong to this query (RM returns 3 frames)
+#   poll    : False = only filled by the reply to another query
 # ---------------------------------------------------------------------------
 TS590_PARAMS = [
     dict(cmd="FA", name="VFO A", kind="freq"),
     dict(cmd="FB", name="VFO B", kind="freq"),
-    dict(cmd="FR", name="RX-VFO", kind="enum", enum={"0": "A", "1": "B", "2": "Speicher"}),
-    dict(cmd="FT", name="TX-VFO", kind="enum", enum={"0": "A", "1": "B", "2": "Speicher"}),
-    dict(cmd="MD", name="Betriebsart", kind="enum",
+    dict(cmd="FR", name="RX-VFO", kind="enum", enum={"0": "A", "1": "B", "2": "memory"}),
+    dict(cmd="FT", name="TX-VFO", kind="enum", enum={"0": "A", "1": "B", "2": "memory"}),
+    dict(cmd="MD", name="Mode", kind="enum",
          enum={"1": "LSB", "2": "USB", "3": "CW", "4": "FM", "5": "AM",
                "6": "FSK", "7": "CW-R", "9": "FSK-R"}),
-    dict(cmd="DA", name="DATA-Modus", kind="bool"),
+    dict(cmd="DA", name="DATA mode", kind="bool"),
     dict(cmd="FW", name="Filter CW/FSK", kind="int", unit="Hz", min=50, max=2500),
-    dict(cmd="SH", name="Filter High-Cut (Index)", kind="int", min=0, max=13),
-    dict(cmd="SL", name="Filter Low-Cut (Index)", kind="int", min=0, max=11),
-    dict(cmd="IS", name="Filtermitte CW", kind="int", unit="Hz", min=300, max=1000),
+    dict(cmd="SH", name="Filter high cut (index)", kind="int", min=0, max=13),
+    dict(cmd="SL", name="Filter low cut (index)", kind="int", min=0, max=11),
+    dict(cmd="IS", name="CW filter centre", kind="int", unit="Hz", min=300, max=1000),
     dict(cmd="RT", name="RIT", kind="bool"),
     dict(cmd="XT", name="XIT", kind="bool"),
-    dict(cmd="IF", name="IF-Sammelstatus", kind="raw", quiet=True),
-    dict(cmd="RA", name="Abschwaecher (ATT)", kind="raw"),
-    dict(cmd="PA", name="Vorverstaerker", kind="raw"),
-    dict(cmd="NB", name="Noise Blanker", kind="enum", enum={"0": "aus", "1": "NB1", "2": "NB2"}),
-    dict(cmd="NL", name="NB-Pegel", kind="int", min=1, max=10),
-    dict(cmd="NR", name="Noise Reduction", kind="enum", enum={"0": "aus", "1": "NR1", "2": "NR2"}),
-    dict(cmd="RL", name="NR-Pegel", kind="int"),
+    dict(cmd="IF", name="IF status", kind="raw", quiet=True),
+    dict(cmd="RA", name="Attenuator (ATT)", kind="raw"),
+    dict(cmd="PA", name="Preamp", kind="raw"),
+    dict(cmd="NB", name="Noise Blanker", kind="enum", enum={"0": "off", "1": "NB1", "2": "NB2"}),
+    dict(cmd="NL", name="NB level", kind="int", min=1, max=10),
+    dict(cmd="NR", name="Noise Reduction", kind="enum", enum={"0": "off", "1": "NR1", "2": "NR2"}),
+    dict(cmd="RL", name="NR level", kind="int"),
     dict(cmd="NT", name="Notch", kind="raw"),
-    dict(cmd="BP", name="Notch-Frequenz", kind="int"),
-    dict(cmd="BC", name="Beat Cancel", kind="enum", enum={"0": "aus", "1": "BC1", "2": "BC2"}),
-    dict(cmd="GC", name="AGC", kind="enum", enum={"0": "aus", "1": "langsam", "2": "schnell"}),
-    dict(cmd="GT", name="AGC-Zeitkonstante", kind="int", min=1, max=20),
-    dict(cmd="AG", name="AF-Gain", kind="int", query="AG0;", min=0, max=255),
-    dict(cmd="RG", name="RF-Gain", kind="int", min=0, max=255),
+    dict(cmd="BP", name="Notch frequency", kind="int"),
+    dict(cmd="BC", name="Beat Cancel", kind="enum", enum={"0": "off", "1": "BC1", "2": "BC2"}),
+    dict(cmd="GC", name="AGC", kind="enum", enum={"0": "off", "1": "slow", "2": "fast"}),
+    dict(cmd="GT", name="AGC time constant", kind="int", min=1, max=20),
+    dict(cmd="AG", name="AF gain", kind="int", query="AG0;", min=0, max=255),
+    dict(cmd="RG", name="RF gain", kind="int", min=0, max=255),
     dict(cmd="SQ", name="Squelch", kind="int", query="SQ0;"),
-    dict(cmd="KS", name="Keyer-Tempo", kind="int", unit="WPM", min=4, max=60),
-    dict(cmd="SD", name="Break-in-Delay", kind="int", unit="ms", min=0, max=1000),
+    dict(cmd="KS", name="Keyer speed", kind="int", unit="WPM", min=4, max=60),
+    dict(cmd="SD", name="Break-in delay", kind="int", unit="ms", min=0, max=1000),
     dict(cmd="VX", name="VOX / Break-in", kind="bool"),
-    dict(cmd="PC", name="Sendeleistung", kind="int", unit="W", min=5, max=100),
-    dict(cmd="TP", name="Tune-Leistung", kind="int", unit="W"),
-    dict(cmd="AC", name="Antennentuner", kind="raw"),
-    dict(cmd="CA", name="CW Tune laeuft", kind="bool"),
-    dict(cmd="AN", name="Antenne", kind="raw"),
-    dict(cmd="LK", name="VFO-Sperre", kind="raw"),
-    dict(cmd="BY", name="Busy (Squelch offen)", kind="raw"),
+    dict(cmd="PC", name="Power", kind="int", unit="W", min=5, max=100),
+    dict(cmd="TP", name="Tune power", kind="int", unit="W"),
+    dict(cmd="AC", name="Antenna tuner", kind="raw"),
+    dict(cmd="CA", name="CW tune running", kind="bool"),
+    dict(cmd="AN", name="Antenna", kind="raw"),
+    dict(cmd="LK", name="VFO lock", kind="raw"),
+    dict(cmd="BY", name="Busy (squelch open)", kind="raw"),
     dict(cmd="SM", name="S-Meter / PO (TX)", kind="int", query="SM0;", min=0, max=30),
     dict(cmd="RM1", name="Meter SWR", kind="int", query="RM;",
          answers=("RM1", "RM2", "RM3"), min=0, max=30),
     dict(cmd="RM2", name="Meter COMP", kind="int", poll=False, min=0, max=30),
     dict(cmd="RM3", name="Meter ALC", kind="int", poll=False, min=0, max=30),
-    dict(cmd="KY", name="KY-Puffer voll", kind="bool"),
+    dict(cmd="KY", name="KY buffer full", kind="bool"),
     dict(cmd="FV", name="Firmware", kind="raw", once=True),
-    dict(cmd="ID", name="Geraete-ID", kind="raw", once=True),
+    dict(cmd="ID", name="Rig ID", kind="raw", once=True),
 ]
 
 TS590_PRIO = {
@@ -166,7 +163,7 @@ TS590_PRIO = {
     "RA": "ai", "PA": "ai", "NB": "ai", "NR": "ai", "NT": "ai", "BC": "ai", "GC": "ai",
 }
 
-# Laenge der Antwortkennung, wenn sie laenger als 2 Zeichen ist
+# length of the reply prefix if longer than 2 characters
 KEYLEN = {"RM": 3}
 
 RIGS = {
@@ -175,28 +172,28 @@ RIGS = {
                   port="/dev/ttyUSB1", baud=115200),
 }
 
-# Prioritaet -> Abfrageintervall in Sekunden.
-#   fast   : bei schnellen Bedienelementen (VFO, AF)
-#   normal : aendert sich gelegentlich
-#   slow   : selten
-#   ai     : soll per Auto-Info kommen, Polling nur als Sicherheitsnetz
+# priority -> query interval in seconds.
+#   fast   : fast controls (VFO, AF)
+#   normal : changes now and then
+#   slow   : rarely
+#   ai     : should come by auto information, polling only as a safety net
 INTERVALS = {"fast": 0.10, "normal": 0.50, "slow": 2.0, "ai": 5.0}
 DEFAULT_PRIO = {
     "FA": "fast", "AG": "fast",
     "RO": "normal", "BW": "normal", "MD": "normal", "RT": "normal", "XT": "normal", "IS": "normal",
     "TQ": "normal", "SM": "normal",
     "RA": "ai", "PA": "ai", "NB": "ai", "AP": "ai", "BN": "ai",
-}                                     # alles andere: slow
+}                                     # everything else: slow
 
 BAUDRATES = {
     4800: termios.B4800, 9600: termios.B9600, 19200: termios.B19200,
     38400: termios.B38400, 57600: termios.B57600, 115200: termios.B115200,
 }
 
-POLL_TIMEOUT = 0.30      # s Wartezeit auf eine Antwort
-POLL_GAP = 0.002         # s Pause zwischen Antwort und naechster Abfrage (KX2 nicht ueberlasten)
-MAX_FAILS = 3           # so oft "?" / keine Antwort -> nicht unterstuetzt
-HIGHLIGHT_S = 2.0        # so lange wird ein geaenderter Wert hervorgehoben
+POLL_TIMEOUT = 0.30      # s to wait for a reply
+POLL_GAP = 0.002         # s between a reply and the next query (do not overload the KX2)
+MAX_FAILS = 3           # this many "?" / no reply -> not supported
+HIGHLIGHT_S = 2.0        # how long a changed value is highlighted
 
 
 def printable(s):
@@ -204,7 +201,7 @@ def printable(s):
 
 
 def escaped(s):
-    """Fuer das Log: nicht druckbare Bytes als \\xNN, damit Statusbits erhalten bleiben."""
+    """For the log: non-printable bytes as \\xNN, so status bits are kept."""
     return "".join(c if 32 <= ord(c) < 127 and c != "\\" else "\\x%02X" % ord(c) for c in s)
 
 
@@ -214,21 +211,21 @@ def wallclock():
 
 
 # ---------------------------------------------------------------------------
-# Serielle Schnittstelle (termios, ohne pyserial)
+# Serial port (termios, no pyserial)
 # ---------------------------------------------------------------------------
 class Serial:
     def __init__(self, port, baud):
         if baud not in BAUDRATES:
-            raise ValueError("Baudrate %d nicht unterstuetzt" % baud)
+            raise ValueError("baud rate %d not supported" % baud)
         self.fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         try:
-            fcntl.ioctl(self.fd, termios.TIOCEXCL)   # kein zweites Programm auf dem Port
+            fcntl.ioctl(self.fd, termios.TIOCEXCL)   # no second program on the port
         except OSError:
             pass
         a = termios.tcgetattr(self.fd)
         a[0] = termios.IGNPAR                                  # iflag
         a[1] = 0                                               # oflag
-        a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL    # cflag, 8N1, ohne HUPCL
+        a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL    # cflag, 8N1, no HUPCL
         a[3] = 0                                               # lflag (raw)
         a[4] = a[5] = BAUDRATES[baud]
         a[6][termios.VMIN] = 0
@@ -250,7 +247,7 @@ class Serial:
         while b";" in self.buf:
             f, self.buf = self.buf.split(b";", 1)
             frames.append(f.decode("latin-1"))
-        if len(self.buf) > 2048:          # Muell ohne Semikolon verwerfen
+        if len(self.buf) > 2048:          # drop garbage without a semicolon
             self.buf = b""
         return frames
 
@@ -259,7 +256,7 @@ class Serial:
 
 
 # ---------------------------------------------------------------------------
-# PC-Lautstaerke aus dem AF-Gain des KX2
+# PC volume from the KX2 AF gain
 # ---------------------------------------------------------------------------
 class AfVolume:
     def __init__(self):
@@ -290,7 +287,7 @@ class AfVolume:
 
 
 # ---------------------------------------------------------------------------
-# Ein Parameter
+# One parameter
 # ---------------------------------------------------------------------------
 class Param:
     def __init__(self, d, dynamic=False, prio_table=None):
@@ -317,12 +314,12 @@ class Param:
         self.raw = None
         self.value = None
         self.src = None
-        self.n_ai = 0          # Aenderungen, die per AI gemeldet wurden
-        self.n_poll = 0        # Aenderungen, die nur das Polling gefunden hat
+        self.n_ai = 0          # changes reported by AI
+        self.n_poll = 0        # changes found only by polling
         self.changed_at = 0.0
         self.bit_t = {}
-        self.ai_times = deque(maxlen=200)    # Zeitpunkte empfangener AI-Meldungen
-        self.poll_times = deque(maxlen=200)  # Zeitpunkte empfangener Poll-Antworten
+        self.ai_times = deque(maxlen=200)    # times of AI reports
+        self.poll_times = deque(maxlen=200)  # times of poll replies
         self.fail = 0
         self.unsupported = False
         self.polled_once = False
@@ -358,7 +355,7 @@ class Param:
         return n / window
 
     def update(self, payload, src, now):
-        """Gibt (geaendert, Liste geaenderter Bits) zurueck."""
+        """Returns (changed, list of changed bits)."""
         (self.ai_times if src == "ai" else self.poll_times).append(now)
         if payload == self.raw:
             return False, []
@@ -398,7 +395,7 @@ class Param:
         if k == "freq" and isinstance(v, int):
             return "{:,}".format(v).replace(",", ".") + " Hz"
         if k == "bool" and v is not None:
-            return "EIN" if v else "aus"
+            return "ON" if v else "off"
         if k == "int" and v is not None:
             return ("%d %s" % (v, self.unit)).strip()
         if k == "enum":
@@ -409,7 +406,7 @@ class Param:
 
 
 # ---------------------------------------------------------------------------
-# Abfrage-Logik
+# Query logic
 # ---------------------------------------------------------------------------
 class Probe:
     def __init__(self, ser, ai_mode, logf, af, prio_overrides=(), rig=None):
@@ -421,7 +418,7 @@ class Probe:
             if cmd in self.by_cmd:
                 self.by_cmd[cmd].prio = prio
         if af:
-            self.by_cmd["AG"].prio = "fast"  # AF-Gain schnell fuer die PC-Lautstaerke
+            self.by_cmd["AG"].prio = "fast"  # AF gain fast for the PC volume
         self.marker = 0
         self.poll_times = deque(maxlen=500)
         self.logf = logf
@@ -433,13 +430,13 @@ class Probe:
         self.pending = None
         self.pending_t = 0.0
         self.last_answer = 0.0
-        self.group = ()          # Antwortkennungen der letzten Abfrage (fuer Mehrfachantworten)
+        self.group = ()          # reply prefixes of the last query (for multi-frame replies)
         self.group_t = 0.0
         self.idx = 0
         self.changes = deque(maxlen=300)
         self.n_rx = 0
 
-    # --- Rohprotokoll ---
+    # --- raw log ---
     def log(self, direction, kind, frame):
         if self.logf:
             self.logf.write("%s %s %-5s %s;\n" % (wallclock(), direction, kind, escaped(frame)))
@@ -448,7 +445,7 @@ class Probe:
         self.ser.write(s)
         self.log("TX", kind, s.rstrip(";"))
 
-    # --- Start / Ende ---
+    # --- start / end ---
     def start(self):
         self.send("AI;", "QUERY")
         t_end = time.monotonic() + 0.6
@@ -476,10 +473,9 @@ class Probe:
 
     # --- Polling ---
     def next_param(self, now):
-        """Liefert den naechsten faelligen Parameter oder None.
-        Gewinner ist der mit der groessten Verspaetung relativ zu seinem Intervall.
-        Bei Ueberlast werden so alle Werte gleichmaessig langsamer, die schnellen
-        bleiben aber im selben Verhaeltnis schneller - niemand verhungert."""
+        """Returns the next due parameter or None.
+        The winner is the one most overdue relative to its interval. Under load all values
+        get slower evenly, the fast ones stay faster in the same ratio - nobody starves."""
         best, best_key = None, None
         for p in self.params:
             if p.dynamic or p.unsupported or not p.pollable or (p.once and p.polled_once):
@@ -498,8 +494,8 @@ class Probe:
 
     def mark(self):
         self.marker += 1
-        self.log("--", "MARK", "### Markierung %d ###" % self.marker)
-        self.changes.appendleft((wallclock(), "##", "", "Markierung %d" % self.marker, ""))
+        self.log("--", "MARK", "### marker %d ###" % self.marker)
+        self.changes.appendleft((wallclock(), "##", "", "marker %d" % self.marker, ""))
 
     def fail(self, p, why):
         p.fail += 1
@@ -507,13 +503,13 @@ class Probe:
         if p.fail >= MAX_FAILS and not p.unsupported:
             p.unsupported = True
             self.changes.appendleft((wallclock(), "--", p.cmd, p.name,
-                                     "nicht unterstuetzt (%s)" % why))
+                                     "not supported (%s)" % why))
 
     def step(self, now):
         if self.pending:
             if now - self.pending_t > POLL_TIMEOUT:
                 self.log("--", "TMO", self.pending.cmd)
-                self.fail(self.pending, "keine Antwort")
+                self.fail(self.pending, "no reply")
                 self.pending = None
             else:
                 return
@@ -529,7 +525,7 @@ class Probe:
         self.pending_t = now
         self.send(p.query, "POLL")
 
-    # --- Empfang ---
+    # --- receiving ---
     def handle(self, f, now):
         f = f.lstrip("\r\n")
         if not f:
@@ -538,7 +534,7 @@ class Probe:
         if f == "?":
             self.log("RX", "ERR", f)
             if self.pending:
-                self.fail(self.pending, "Antwort ?")
+                self.fail(self.pending, "reply ?")
                 self.pending = None
                 self.last_answer = now
             return
@@ -556,12 +552,12 @@ class Probe:
             self.pending = None
             self.last_answer = now
         elif cmd in self.group and now - self.group_t < 0.15 and cmd in self.by_cmd:
-            src, p = "poll", self.by_cmd[cmd]      # weitere Zeile einer Mehrfachantwort
+            src, p = "poll", self.by_cmd[cmd]      # further frame of a multi-frame reply
         else:
             src = "ai"
             p = self.by_cmd.get(cmd)
             if p is None:
-                p = Param(dict(cmd=cmd, name="(nicht in Liste)", kind="raw"), dynamic=True)
+                p = Param(dict(cmd=cmd, name="(not in list)", kind="raw"), dynamic=True)
                 self.params.append(p)
                 self.by_cmd[cmd] = p
         self.log("RX", "POLL" if src == "poll" else "AUTO", f)
@@ -588,12 +584,12 @@ class Probe:
 
 
 # ---------------------------------------------------------------------------
-# Text-Oberflaeche
+# Text UI
 # ---------------------------------------------------------------------------
 C_GREEN, C_YELLOW, C_RED, C_CYAN, C_HL = 1, 2, 3, 4, 5
 
-COLS = [("Cmd", 4), ("Funktion", 22), ("Wert", 16), ("Anzeige", 26),
-        ("Quelle", 6), ("AI#", 5), ("Poll#", 6), ("AI/s", 5), ("Poll/s", 6), ("Prio", 6), ("Status", 22)]
+COLS = [("Cmd", 4), ("Function", 22), ("Value", 16), ("Display", 26),
+        ("Source", 6), ("AI#", 5), ("Poll#", 6), ("AI/s", 5), ("Poll/s", 6), ("Prio", 6), ("Status", 22)]
 
 
 def col_x(i):
@@ -648,9 +644,9 @@ def draw_row(scr, y, p, now):
         put(scr, y, col_x(2), p.display()[:COLS[2][1]], vattr)
         if p.kind == "bool" and p.value is not None:
             if p.value:
-                put(scr, y, col_x(3), "\u25cf aktiv", cp(C_GREEN) | curses.A_BOLD)
+                put(scr, y, col_x(3), "\u25cf active", cp(C_GREEN) | curses.A_BOLD)
             else:
-                put(scr, y, col_x(3), "\u25cb inaktiv", curses.A_DIM)
+                put(scr, y, col_x(3), "\u25cb inactive", curses.A_DIM)
         elif p.kind == "int":
             put(scr, y, col_x(3), bar(p, 12)[:COLS[3][1]], cp(C_CYAN))
 
@@ -662,18 +658,18 @@ def draw_row(scr, y, p, now):
     ra, rp = p.rate(p.ai_times, now), p.rate(p.poll_times, now)
     put(scr, y, col_x(7), "%5.1f" % ra if ra else "    -", cp(C_GREEN) if ra else curses.A_DIM)
     put(scr, y, col_x(8), "%6.1f" % rp if rp else "     -", cp(C_YELLOW) if rp else curses.A_DIM)
-    put(scr, y, col_x(9), {"fast": "schnell", "normal": "normal", "slow": "selten", "ai": "AI"}.get(p.prio, p.prio)[:6],
+    put(scr, y, col_x(9), {"fast": "fast", "normal": "normal", "slow": "slow", "ai": "AI"}.get(p.prio, p.prio)[:6],
         curses.A_DIM if p.dynamic else 0)
     sx = col_x(10)
     if p.unsupported:
-        put(scr, y, sx, "nicht unterstuetzt", cp(C_RED))
+        put(scr, y, sx, "not supported", cp(C_RED))
     elif p.status:
         put(scr, y, sx, p.status, cp(C_RED))
     elif p.raw is None:
-        put(scr, y, sx, "warte \u2026", curses.A_DIM)
+        put(scr, y, sx, "waiting \u2026", curses.A_DIM)
     elif p.changed_at:
         age = now - p.changed_at
-        put(scr, y, sx, "geaendert vor %.0f s" % age if age >= 1 else "gerade geaendert",
+        put(scr, y, sx, "changed %.0f s ago" % age if age >= 1 else "just changed",
             curses.A_DIM)
 
 
@@ -683,15 +679,15 @@ def draw(scr, pr, args, scroll):
     now = time.monotonic()
     cp = curses.color_pair
 
-    ct = "%.0f Abfr./s" % pr.polls_per_s(now)
-    hdr = (" " + args.rig_name + "-Probe  %s @ %d Bd \u2502 AI soll %d / ist %s \u2502 Polling: %s \u2502 %s \u2502 RX %d"
+    ct = "%.0f queries/s" % pr.polls_per_s(now)
+    hdr = (" " + args.rig_name + "-probe  %s @ %d Bd \u2502 AI wanted %d / is %s \u2502 Polling: %s \u2502 %s \u2502 RX %d"
            % (args.port, args.baud, pr.ai_target, pr.ai_reported or "?",
-              "AN" if pr.polling else "PAUSE", ct, pr.n_rx))
+              "ON" if pr.polling else "PAUSE", ct, pr.n_rx))
     if pr.af:
-        hdr += " \u2502 AF\u2192PC %s" % ("an" if pr.af.available else "kein wpctl/pactl")
+        hdr += " \u2502 AF\u2192PC %s" % ("on" if pr.af.available else "no wpctl/pactl")
     put(scr, 0, 0, hdr.ljust(w), curses.A_REVERSE | curses.A_BOLD)
-    put(scr, 1, 1, "q Ende  p Polling an/aus  a AI-Modus  m Markierung  c Zaehler 0  r Unterstuetzung neu pruefen  "
-                   "\u2191\u2193 Bild\u2191\u2193 scrollen", curses.A_DIM)
+    put(scr, 1, 1, "q quit  p polling on/off  a AI mode  m marker  c counters 0  r retry unsupported  "
+                   "\u2191\u2193 PgUp/PgDn scroll", curses.A_DIM)
     for i, (t, _) in enumerate(COLS):
         put(scr, 2, col_x(i), t, curses.A_UNDERLINE | curses.A_BOLD)
 
@@ -703,10 +699,10 @@ def draw(scr, pr, args, scroll):
     for r, p in enumerate(params[scroll:scroll + rows_h]):
         draw_row(scr, top + r, p, now)
     if scroll + rows_h < len(params):
-        put(scr, top + rows_h - 1, w - 12, " \u2193 weitere ", curses.A_REVERSE)
+        put(scr, top + rows_h - 1, w - 12, " \u2193 more ", curses.A_REVERSE)
 
     ly = top + rows_h
-    put(scr, ly, 0, ("\u2500 Aenderungen (neueste oben) " + "\u2500" * w)[:w - 1], curses.A_DIM)
+    put(scr, ly, 0, ("\u2500 changes (newest first) " + "\u2500" * w)[:w - 1], curses.A_DIM)
     for i, (t, src, cmd, name, txt) in enumerate(list(pr.changes)[:h - ly - 1]):
         y = ly + 1 + i
         put(scr, y, 1, t, curses.A_DIM)
@@ -742,7 +738,7 @@ def tui(scr, ser, args, logf):
         if "=" in item:
             c, v = (x.strip() for x in item.split("=", 1))
             if v.lower() not in INTERVALS:
-                raise SystemExit("Unbekannte Prioritaet '%s' (erlaubt: %s)" % (v, ", ".join(INTERVALS)))
+                raise SystemExit("unknown priority '%s' (allowed: %s)" % (v, ", ".join(INTERVALS)))
             overrides.append((c.upper(), v.lower()))
     pr = Probe(ser, args.ai, logf, af, overrides, RIGS[args.rig])
     pr.start()
@@ -792,21 +788,21 @@ def tui(scr, ser, args, logf):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="KX2 CAT-Testwerkzeug (Auto-Info vs. Polling)")
+    ap = argparse.ArgumentParser(description="KX2 / TS-590SG CAT test tool (auto information vs. polling)")
     ap.add_argument("--rig", choices=sorted(RIGS), default="kx2",
-                    help="Geraeteprofil: kx2 (Standard) oder ts590")
-    ap.add_argument("--port", default=None, help="Standard: kx2 /dev/ttyUSB0, ts590 /dev/ttyUSB1")
-    ap.add_argument("--baud", type=int, default=None, help="Standard: kx2 38400, ts590 115200")
+                    help="rig: kx2 (default) or ts590")
+    ap.add_argument("--port", default=None, help="default: kx2 /dev/ttyUSB0, ts590 /dev/ttyUSB1")
+    ap.add_argument("--baud", type=int, default=None, help="default: kx2 38400, ts590 115200")
     ap.add_argument("--ai", type=int, choices=(0, 1, 2), default=2,
-                    help="Auto-Info-Modus beim Start (Standard 2)")
-    ap.add_argument("--log", default="kx2probe.log", help="Rohdaten-Protokoll ('' = aus)")
+                    help="auto information mode at start (default 2)")
+    ap.add_argument("--log", default="kx2probe.log", help="raw data log ('' = off)")
     ap.add_argument("--prio", default="",
-                    help="Prioritaeten aendern, z. B. BW=fast,KS=normal "
-                         "(Stufen: fast 0,1 s / normal 0,5 s / slow 2 s / ai 5 s)")
+                    help="change priorities, e.g. BW=fast,KS=normal "
+                         "(levels: fast 0.1 s / normal 0.5 s / slow 2 s / ai 5 s)")
     ap.add_argument("--init", default="",
-                    help="Befehle, die beim Start einmal gesendet werden, z. B. 'K31;' (KX2 erweiterter Modus)")
+                    help="commands sent once at start, e.g. 'K31;' (KX2 extended mode)")
     ap.add_argument("--af-to-pc", action="store_true",
-                    help="AF-Gain des KX2 (0-60) auf die PC-Lautstaerke abbilden")
+                    help="map the KX2 AF gain (0-60) to the PC volume")
     args = ap.parse_args()
     rig = RIGS[args.rig]
     args.port = args.port or rig["port"]
@@ -816,12 +812,12 @@ def main():
     try:
         ser = Serial(args.port, args.baud)
     except FileNotFoundError:
-        sys.exit("Port %s nicht gefunden. Ist der KX2 angeschlossen? (ls /dev/ttyUSB*)" % args.port)
+        sys.exit("port %s not found. Is the rig connected? (ls /dev/ttyUSB*)" % args.port)
     except PermissionError:
-        sys.exit("Kein Zugriff auf %s. Benutzer zur Gruppe 'dialout' hinzufuegen:\n"
-                 "  sudo usermod -aG dialout $USER   (danach ab- und wieder anmelden)" % args.port)
+        sys.exit("no access to %s. Add the user to the group 'dialout':\n"
+                 "  sudo usermod -aG dialout $USER   (then log out and in again)" % args.port)
     except OSError as e:
-        sys.exit("Port %s kann nicht geoeffnet werden: %s" % (args.port, e))
+        sys.exit("cannot open port %s: %s" % (args.port, e))
 
     logf = open(args.log, "a", buffering=1, encoding="utf-8") if args.log else None
     if logf:
@@ -833,7 +829,7 @@ def main():
     except KeyboardInterrupt:
         pass
     except OSError as e:
-        print("Verbindung zum Port verloren: %s" % e)
+        print("lost the port: %s" % e)
     finally:
         ser.close()
         if logf:

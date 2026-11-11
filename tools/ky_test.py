@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ky_test.py - misst die CW-Ausgabe des TS-590SG per CAT-Befehl KY
+ky_test.py - measures CW text output of the TS-590SG with the CAT command KY
 
-ACHTUNG: Dieses Skript SENDET. Nur mit Dummy Load und kleiner Leistung benutzen!
-(Leistung vorher am Geraet auf 5 W stellen.)
+WARNING: this script TRANSMITS. Use it only with a dummy load and low power!
+(Set the power to 5 W at the rig first.)
 
-Drei Tests:
-  1. Kurzer Text: Zeit vom Befehl bis Sendebeginn (TX0), Gesamtdauer
-  2. Langer Text (> 24 Zeichen): Stueckelung mit Pufferabfrage (KY;), Luecken?
-  3. Abbruch: langer Text, nach 1,5 s "KY0;" -> Zeit bis Sendeende (RX)
+Three tests:
+  1. short text: time from the command to TX start (TX0), total time
+  2. long text (> 24 characters): packets with buffer checks (KY;), gaps?
+  3. abort: long text, "KY0;" after 1.5 s -> time to TX end (RX)
 
-Nur Python-Standardbibliothek. kx2probe.py darf nicht gleichzeitig laufen.
-Aufruf:  python3 ky_test.py                 (/dev/ttyUSB1, 115200 Bd)
+Python standard library only. kx2probe.py must not run at the same time.
+Usage:   python3 ky_test.py                 (/dev/ttyUSB1, 115200 Bd)
          python3 ky_test.py --port /dev/ttyUSB1 --wpm 28
 """
 import argparse
@@ -55,7 +55,7 @@ class Rig:
         self.log.write("%9.1f TX %s\n" % (self.t(), s))
 
     def frames(self, timeout):
-        """Liefert (Zeit_ms, Frame) bis timeout s ohne neue Daten."""
+        """Returns (time_ms, frame) until timeout s without new data."""
         r, _, _ = select.select([self.fd], [], [], timeout)
         if r:
             try:
@@ -73,7 +73,7 @@ class Rig:
         return out
 
     def query(self, cmd, timeout=0.3):
-        """Sendet z. B. 'KS;' und liefert die Antwort ohne Kennung, andere Frames werden gesammelt."""
+        """Sends e.g. 'KS;' and returns the reply without its prefix; other frames are collected."""
         self.send(cmd)
         key = cmd[:2]
         end = time.monotonic() + timeout
@@ -95,7 +95,7 @@ def ky(text):
 
 
 def wait_for(rig, events, want, timeout):
-    """Wartet auf einen Frame, der mit want beginnt. Sammelt alle Frames in events."""
+    """Waits for a frame starting with want. Collects all frames in events."""
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         for tm, f in rig.frames(0.02):
@@ -110,16 +110,16 @@ def tx_edges(events):
 
 
 def expected_ms(text, wpm):
-    # grob: PARIS = 50 Dits; 1 Zeichen ~ 10 Dits inkl. Zwischenraum
+    # rough: PARIS = 50 dits; 1 character ~ 10 dits incl. gap
     dit = 1200.0 / wpm
     return len(text) * 10 * dit
 
 
 def send_text(rig, text, events):
-    """Sendet Text in 24er-Stuecken mit Pufferabfrage. Liefert Zeitpunkt der ersten Sendung."""
+    """Sends text in 24-character packets, checking the buffer. Returns the time of the first packet."""
     t_first = None
     for part in chunks(text):
-        # warten, bis Puffer Platz hat
+        # wait until the buffer has room
         for _ in range(200):
             ans, seen = rig.query("KY;")
             events.extend(seen)
@@ -127,7 +127,7 @@ def send_text(rig, text, events):
                 break
             time.sleep(0.05)
         else:
-            print("  Puffer wurde nicht frei - Abbruch")
+            print("  buffer did not get free - giving up")
             return t_first
         if t_first is None:
             t_first = rig.t()
@@ -139,15 +139,15 @@ def send_text(rig, text, events):
 def report_edges(events, t_start):
     edges = tx_edges(events)
     for tm, f in edges:
-        print("    %+8.0f ms  %s" % (tm - t_start, "Senden EIN" if f.startswith("TX") else "Senden AUS"))
+        print("    %+8.0f ms  %s" % (tm - t_start, "TX on" if f.startswith("TX") else "TX off"))
     return edges
 
 
 def main():
-    ap = argparse.ArgumentParser(description="TS-590SG KY-Test (SENDET!)")
+    ap = argparse.ArgumentParser(description="TS-590SG KY test (TRANSMITS!)")
     ap.add_argument("--port", default="/dev/ttyUSB1")
     ap.add_argument("--baud", type=int, default=115200)
-    ap.add_argument("--wpm", type=int, default=None, help="Keyer-Tempo fuer den Test setzen (sonst wie eingestellt)")
+    ap.add_argument("--wpm", type=int, default=None, help="keyer speed for the test (default: as set on the rig)")
     ap.add_argument("--log", default="ky_test.log")
     args = ap.parse_args()
 
@@ -162,13 +162,13 @@ def main():
     pc, _ = rig.query("PC;")
     md, _ = rig.query("MD;")
     ks_old, _ = rig.query("KS;")
-    print("TS-590SG: Mode %s, Leistung %s W, Tempo %s WPM, AI %s" % (md, pc, ks_old, ai_old))
+    print("TS-590SG: mode %s, power %s W, speed %s WPM, AI %s" % (md, pc, ks_old, ai_old))
     if md not in ("3", "7"):
-        sys.exit("Bitte zuerst auf CW schalten.")
+        sys.exit("switch the rig to CW first.")
     if pc is None or int(pc) > 10:
-        print("WARNUNG: Leistung %s W. Nur mit Dummy Load fortfahren!" % pc)
-    if input("Dummy Load angeschlossen und bereit zum Senden? (ja/nein) ").strip().lower() != "ja":
-        sys.exit("Abgebrochen.")
+        print("WARNING: power %s W. Continue only with a dummy load!" % pc)
+    if input("Dummy load connected and ready to transmit? (yes/no) ").strip().lower() != "yes":
+        sys.exit("cancelled.")
 
     rig.send("AI2;")
     if args.wpm:
@@ -179,7 +179,7 @@ def main():
 
     try:
         # --- Test 1
-        print("\n1) Kurzer Text '%s' bei %d WPM (erwartet ca. %.0f ms)" % (SHORT, wpm, expected_ms(SHORT, wpm)))
+        print("\n1) short text '%s' at %d WPM (expected about %.0f ms)" % (SHORT, wpm, expected_ms(SHORT, wpm)))
         ev = []
         t_send = rig.t()
         rig.send(ky(SHORT))
@@ -187,13 +187,13 @@ def main():
         t_off = wait_for(rig, ev, "RX", 10.0)
         report_edges(ev, t_send)
         if t_on and t_off:
-            print("  -> Befehl bis Sendebeginn: %.0f ms, Sendedauer: %.0f ms" % (t_on - t_send, t_off - t_on))
+            print("  -> command to TX start: %.0f ms, keying time: %.0f ms" % (t_on - t_send, t_off - t_on))
         else:
-            print("  -> TX0/RX nicht gemeldet (AI aus? TX gesperrt?)")
+            print("  -> TX0/RX not reported (AI off? TX inhibited?)")
         time.sleep(1.0)
 
         # --- Test 2
-        print("\n2) Langer Text (%d Zeichen = %d Stuecke), erwartet ca. %.0f ms"
+        print("\n2) long text (%d characters = %d packets), expected about %.0f ms"
               % (len(LONG), len(chunks(LONG)), expected_ms(LONG, wpm)))
         ev = []
         t_send = send_text(rig, LONG, ev)
@@ -201,13 +201,13 @@ def main():
         edges = report_edges(ev, t_send)
         n_on = sum(1 for _, f in edges if f.startswith("TX"))
         if n_on > 1:
-            print("  -> %d Sendephasen: Luecken zwischen den Stuecken (oder Full Break-in)" % n_on)
+            print("  -> %d TX periods: gaps between the packets (or full break-in)" % n_on)
         elif n_on == 1:
-            print("  -> durchgehend gesendet, keine Luecke beim Nachladen")
+            print("  -> keyed continuously, no gap when refilling")
         time.sleep(1.0)
 
         # --- Test 3
-        print("\n3) Abbruch: langer Text, nach 1,5 s 'KY0;'")
+        print("\n3) abort: long text, 'KY0;' after 1.5 s")
         ev = []
         t_send = send_text(rig, ABORT[:24], ev)
         rig.send(ky(ABORT[24:48]))
@@ -219,11 +219,11 @@ def main():
         t_off = wait_for(rig, ev, "RX", 10.0)
         report_edges(ev, t_send)
         if t_off:
-            print("  -> Abbruchbefehl bis Sendeende: %.0f ms" % (t_off - t_abort))
+            print("  -> abort command to TX end: %.0f ms" % (t_off - t_abort))
         else:
-            print("  -> kein RX nach Abbruch gemeldet!")
+            print("  -> no RX reported after the abort!")
     except KeyboardInterrupt:
-        print("\nUnterbrochen.")
+        print("\ninterrupted.")
     finally:
         rig.send("KY0;")
         rig.send("RX;")
@@ -233,7 +233,7 @@ def main():
             rig.send("AI%s;" % ai_old)
         time.sleep(0.1)
         log.close()
-    print("\nRohdaten in %s" % args.log)
+    print("\nraw data in %s" % args.log)
 
 
 if __name__ == "__main__":
