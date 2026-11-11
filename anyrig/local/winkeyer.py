@@ -159,6 +159,8 @@ class WinKeyerEmulator:
         self._cur = ""
         self._cur_since = 0.0
         self._held: asyncio.TimerHandle | None = None
+        self._held_data = b""
+        self._unechoed = ""             # remote_echo mode: sent to the remote, not echoed yet
         self.commands_seen: dict[str, int] = {}
 
     @property
@@ -396,6 +398,8 @@ class WinKeyerEmulator:
             self._flush = None
         if self._text:
             text, self._text = self._text, ""
+            if self.remote_echo:
+                self._unechoed += text
             self.on_text(text)
 
     def set_remote_echo(self, on: bool) -> None:
@@ -405,6 +409,9 @@ class WinKeyerEmulator:
 
     def echo(self, ch: str, note: str = "") -> None:
         """Remote keyer reports a character (remote_echo mode)."""
+        i = self._unechoed.find(ch)
+        if i >= 0:
+            self._unechoed = self._unechoed[i + 1:]
         if not self.echo_enabled:
             return
         rev = {v: k for k, v in MERGE_TO_PROSIGN.items() if k != "VA"}
@@ -489,9 +496,11 @@ class WinKeyerEmulator:
         else:
             loop = asyncio.get_running_loop()
             self._held = loop.call_later(due - now, self._release, data)
+            self._held_data = data
 
     def _release(self, data: bytes) -> None:
         self._held = None
+        self._held_data = b""
         self._echo_now(data)
 
     def _echo_now(self, data: bytes) -> None:
@@ -513,6 +522,24 @@ class WinKeyerEmulator:
         if self._flush:
             self._flush.cancel()
         self._flush_text(end=True)
+
+    def link_lost(self) -> None:
+        """Control link down: nothing more will be keyed. Echo whatever Win-Test still waits for
+        and report idle - otherwise Win-Test waits for an echo forever and the F keys stay dead
+        after the reconnect until REOPEN (11 Nov 2026, WLAN off during a CQ)."""
+        pending, self._unechoed = self._unechoed, ""
+        held, self._held_data = self._held_data, b""
+        deferred = "".join(echo or ch for ch, echo in self._defer_text)
+        self._abort(send=False)                         # drops timers, text, deferred repeat
+        for ch in pending:
+            self.echo(ch, "local (no link)")
+        if held:
+            self._echo_now(held)
+        if deferred and self.echo_enabled:
+            self._send(deferred.encode("ascii", errors="ignore"), "echo local (no link)")
+        self.set_busy(False)
+        if self.open:
+            self._status()
 
     def done(self) -> None:
         """Remote finished keying everything we sent."""

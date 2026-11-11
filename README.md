@@ -123,6 +123,12 @@ N NR, B NB, M notch, A AGC. It always shows what the rig reports, not the last c
 
 Safety on the remote: link silent > 1 s -> `KY0;`/`RX;`/DTR released and CW blocked until the next
 connect; continuous TX longer than `safety.tx_timeout_s` (60 s) -> CW aborted, `RX;`.
+When the link drops, kx2-local echoes the characters Win-Test still waits for, so its macros work
+again right after the reconnect.
+
+**Restarting kx2-local:** the virtual COM ports are new ptys after a restart, but Win-Test keeps
+the old (dead) ones open and becomes slow. Press REOPEN in Win-Test (or restart it) after
+restarting kx2-local.
 
 ## Idea
 

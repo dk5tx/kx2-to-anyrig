@@ -65,3 +65,36 @@ def test_handler_exception_does_not_kill_the_link():
         await link.stop()
         server.close()
     run(body())
+
+
+def test_link_loss_releases_wintest(tmp_path):
+    """WLAN off during a message (11 Nov 2026): Win-Test waited for an echo forever and the
+    F keys stayed dead after the reconnect until REOPEN."""
+    async def body():
+        texts = []
+        wk = WinKeyerEmulator(str(tmp_path / "com2"), on_text=texts.append,
+                              on_abort=lambda: None, on_speed=lambda w: None)
+        wk.set_remote_echo(True)
+        wk.start()
+        wt = FakeWT(str(tmp_path / "com2"))
+        wt.send(b"\x00\x02")
+        assert await wt.read(1) == bytes([VERSION])
+        wt.send(b"\x0e\x04")                                   # echo on
+        wt.send(b"\x0aC")
+        await asyncio.sleep(0.1)
+        assert texts == ["C"] and wk.busy
+        wk.echo("C")                                           # remote keyed C
+        wt.send(b"Q")                                          # ... then the link drops
+        await asyncio.sleep(0.1)
+        await wt.drain()
+        wk.link_lost()
+        out = await wt.drain()
+        assert b"Q" in out and out.endswith(b"\xc0")           # Win-Test gets its echo + idle
+        assert not wk.busy
+        # after the reconnect the next message works normally
+        wt.send(b"\x0aT")
+        await asyncio.sleep(0.1)
+        assert texts[-1] == "T" and wk.busy
+        wt.close()
+        await wk.stop()
+    run(body())

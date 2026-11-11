@@ -187,6 +187,8 @@ class Sync:
             self._cw_open.add(self._cw_id)
         else:
             log.warning("no remote connection – CW %r not sent", text)
+            if self.winkeyer is not None:
+                self.winkeyer.link_lost()           # Win-Test must not wait for its echo
             self._cw_idle()
 
     def cw_clear(self) -> None:
@@ -266,7 +268,7 @@ class Sync:
         self.ready = False
         self._cw_open.clear()
         if self.winkeyer is not None:
-            self.winkeyer.set_busy(False)
+            self.winkeyer.link_lost()
         for h in self._timers.values():
             h.cancel()
         self._timers.clear()
