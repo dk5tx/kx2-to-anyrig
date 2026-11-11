@@ -135,7 +135,10 @@ message, CQ repeat and keyboard mode behave natively. PTT on RTS (for an amplifi
 lead/tail times set in Win-Test. Check the timing once with a dummy load:
 `python3 tools/dtr_test.py --port /dev/serial/by-id/usb-… --wpm 26` (this transmits).
 
-### Start automatically at boot
+### Optional: start automatically at boot
+
+Usually you start anyrig-remote by hand when you want to operate remotely – and leave it off
+while you sit at the rig yourself. If the shack PC should always be ready:
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -217,7 +220,10 @@ restart of kx2-local. Only if anyrig-ports itself is restarted, Win-Test needs R
 
 ## Starting
 
-**By hand** (recommended while you watch the log):
+**By hand** (recommended while you watch the log). `python3 -m anyrig.local` runs the module
+`anyrig/local/__main__.py` of the checkout – there is nothing to install, but the command must
+be run inside the checkout directory. Config files can have any name and place (`-c`); only
+the systemd units expect `~/.config/anyrig/local.yaml` and `remote.yaml`.
 
 ```bash
 cd ~/kx2-to-anyrig
