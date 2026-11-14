@@ -209,7 +209,7 @@ function swrval(x) {                     // SWR meter 0..1 -> SWR ratio
 // but numbers that fast cannot be read. Numbers show a peak hold and refresh a few times a second.
 //   S:   bar live; number holds the peak 0.8 s, then falls back
 //   PO:  bar like a PEP meter (peak held 0.5 s); number holds 1 s, refresh 3x/s
-//   SWR: bar and number hold the peak 1.5 s and refresh once a second (steady, also between CW elements)
+//   SWR: bar and number hold the peak 1.5 s; a rise shows at once, a fall at most once a second
 //   ALC, COMP: bar live; number holds 1 s, refresh 3x/s
 const MH = {}; let meterTx = null;
 function held(key, v, holdMs, releasePerS) {   // peak hold with release, values 0..1
@@ -240,7 +240,10 @@ function meters(m, tx) {
   const alc = held("alc", m.alc, 1000, 0.5), comp = held("comp", m.comp, 1000, 0.5);
   bar("alc", m.alc, 0.51, 0.9); bar("comp", m.comp);
   every("po", 330, () => { $("v_s").textContent = m.po == null ? "" : poval(po); });
-  every("swr", 1000, () => { bar("swr", swr, 0.33, 0.66); $("v_swr").textContent = m.swr == null ? "" : swrval(swr); });
+  // SWR: a rising value shows at once (also the first value after TX starts), falling only once a second
+  const showSwr = () => { MH.swrShown = swr; bar("swr", swr, 0.33, 0.66); $("v_swr").textContent = m.swr == null ? "" : swrval(swr); };
+  if (m.swr != null && (MH.swrShown == null || swr > MH.swrShown)) { MH["@swr"] = {t: performance.now()}; showSwr(); }
+  else every("swr", 1000, showSwr);
   every("alc", 330, () => { $("v_alc").textContent = m.alc == null ? "" : Math.round(alc * 30) + "/30"; });
   every("comp", 330, () => { $("v_comp").textContent = m.comp == null ? "" : Math.round(comp * 30) + " dB"; });
 }
