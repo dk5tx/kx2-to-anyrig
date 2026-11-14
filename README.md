@@ -5,21 +5,21 @@ contesting with Win-Test (CW first).
 
 ```mermaid
 flowchart LR
-    subgraph Laptop["Laptop (lokal)"]
-        WT["Win-Test (Wine)<br>COM1 K3 · COM2 WinKeyer"]
-        L["kx2-local<br>Web-UI · RX-Audio"]
-        KX2["KX2<br>Knöpfe · Tasten · Display"]
+    subgraph Laptop["Laptop (local)"]
+        WT["Win-Test (Wine)<br>COM1: K3 <br> COM2: WinKeyer"]
+        L["kx2-local<br>Web-UI <br> RX-Audio"]
+        KX2["KX2<br>Knobs · Buttons <br> Display"]
         WT <--> L
         KX2 <--> L
     end
-    subgraph Shack["Shack-PC (remote)"]
+    subgraph Shack["Shack PC (remote)"]
         R["anyrig-remote"]
         TS["TS-590SG (CAT)"]
         KEY["KEY / PTT<br>(DTR / RTS)"]
         R <--> TS
         R --> KEY
     end
-    L <-- "TCP 7355 Steuerung" --> R
+    L <-- "TCP 7355 Control" --> R
     R -- "UDP 7356 Audio" --> L
 ```
 
