@@ -89,6 +89,11 @@ DISP 09 (H: MENU), OFS/B 35 (H: CLR).
 - With AI2 by itself: RX continuously SM; TX every ~60 ms RM1 (SWR), RM2 (COMP), RM3 (ALC),
   SM (= PO); each 0–30.
 - Example CW TX: SWR 0–1, ALC 15–20, PO 8–22.
+- SWR scale (14 Nov 2026, read off the rig's display with all 30 segments lit): 1.5 at about segment 6,
+  2 at about 11, 3 at 15, infinity at 30. This fits a bar linear in the reflection coefficient,
+  |G| = RM1/30, so SWR = (1 + G) / (1 − G): 6 → 1.5, 10 → 2.0, 15 → 3.0. The web UI shows that value.
+  Resolution near 1:1 is about 0.07 per segment; the rig's own SWR bridge reads low (reports of
+  1.7:1 shown as about 1.2:1).
 
 ### TX
 - `TX0;` / `RX;` immediately, plus XI.

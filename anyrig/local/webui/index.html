@@ -180,6 +180,15 @@ function sval(raw30) {                    // S-meter points 0-30 -> S units (app
   return "S9+" + Math.round((raw30 - 15) * 60 / 15);
 }
 
+function swrval(x) {                     // SWR meter 0..1 -> SWR ratio
+  // The TS-590SG bar is linear in the reflection coefficient: 30 segments = |G| 0..1.
+  // Its scale fits: 1.5 at 6, 2 at 10, 3 at 15 segments, infinity at 30. SWR = (1+G)/(1-G).
+  if (x == null) return "";
+  if (x >= 0.999) return "\u221e";
+  const swr = (1 + x) / (1 - x);
+  return swr < 10 ? swr.toFixed(1) : String(Math.round(swr));
+}
+
 function render() {
   const st = S.state, m = S.meters || {}, tx = !!st.tx;
   $("linkdot").className = "dot" + (S.link && S.link.connected ? " ok" : "");
@@ -219,7 +228,7 @@ function render() {
 
   $("slabel").textContent = tx ? "PO" : "S";
   bar("s", tx ? m.po : m.s); $("v_s").textContent = tx ? Math.round((m.po || 0) * 100) + " %" : sval(m.s_raw);
-  bar("swr", tx ? m.swr : 0, 0.33, 0.66); $("v_swr").textContent = tx && m.swr_raw != null ? m.swr_raw : "";
+  bar("swr", tx ? m.swr : 0, 0.33, 0.66); $("v_swr").textContent = tx ? swrval(m.swr) : "";
   bar("alc", tx ? m.alc : 0, 0.6, 0.9); $("v_alc").textContent = tx && m.alc_raw != null ? m.alc_raw : "";
   bar("comp", tx ? m.comp : 0); $("v_comp").textContent = tx && m.comp_raw != null ? m.comp_raw : "";
 
