@@ -3,11 +3,24 @@
 Use an **Elecraft KX2** as the local control head for your transceiver at home – for remote
 contesting with Win-Test (CW first).
 
-```
- LAPTOP                                                   SHACK PC
- Win-Test (Wine)  COM1 "K3", COM2 "WinKeyer"              anyrig-remote ── TS-590SG (CAT)
- kx2-local ── KX2 (knobs, buttons, display)   TCP/UDP     │             ── KEY / PTT (serial DTR/RTS)
- web UI, RX audio                           ◄──────────►  └─ RX audio (rig USB sound card)
+```mermaid
+flowchart LR
+    subgraph Laptop["Laptop (lokal)"]
+        WT["Win-Test (Wine)<br>COM1 K3 · COM2 WinKeyer"]
+        L["kx2-local<br>Web-UI · RX-Audio"]
+        KX2["KX2<br>Knöpfe · Tasten · Display"]
+        WT <--> L
+        KX2 <--> L
+    end
+    subgraph Shack["Shack-PC (remote)"]
+        R["anyrig-remote"]
+        TS["TS-590SG (CAT)"]
+        KEY["KEY / PTT<br>(DTR / RTS)"]
+        R <--> TS
+        R --> KEY
+    end
+    L <-- "TCP 7355 Steuerung" --> R
+    R -- "UDP 7356 Audio" --> L
 ```
 
 - Turn the KX2's VFO, change filter, RIT, band, ATT, preamp, NB, NR … – the home rig follows.
