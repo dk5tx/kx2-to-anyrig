@@ -118,12 +118,17 @@ class DTRKeyer:
         """Drop queued text; the character being keyed is finished."""
         with self._cv:
             self._q.clear()
+            # a dropped "cancel buffered speed" must not leave the ++/-- speed behind
+            self._buffered_wpm = None
             self._cv.notify()
 
     def abort(self) -> None:
         """Stop keying at once (ESC, safety)."""
         with self._cv:
             self._q.clear()
+            # like a real WinKeyer: clearing the buffer also ends a buffered speed (++/--);
+            # otherwise the queued cancel is lost and the rig's speed is ignored from then on
+            self._buffered_wpm = None
             self._abort.set()
             self._cv.notify()
         self.line.key(False)

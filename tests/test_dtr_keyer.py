@@ -140,6 +140,29 @@ def test_ptt_lead_tail_and_buffered_speed():
     run(body())
 
 
+def test_abort_ends_buffered_speed():
+    """ESC inside a ++/-- message drops the queued cancel: the rig speed must apply again."""
+    async def body():
+        k, line, done, echo = await keyer(20)
+        k.set_buffered_wpm(40)
+        k.send("EEEEEEEE", 1)
+        k.set_buffered_wpm(0)                  # cancel, still queued when ESC comes
+        await asyncio.sleep(0.05)
+        k.abort()
+        assert k._buffered_wpm is None
+        assert abs(k._wpm() - 20) < 0.01
+        await asyncio.sleep(0.1)                # let the keying thread drop the aborted element
+        line.events.clear()
+        k.send("E", 2)
+        assert await wait_for(lambda: 2 in done, 3.0)
+        assert abs(line.marks()[0][1] - 0.06) < 0.006           # 20 WPM, not 40
+        k.set_buffered_wpm(40)
+        k.clear()
+        assert k._buffered_wpm is None
+        await k.stop()
+    run(body())
+
+
 # ---------------------------------------------------------------------- end to end with Win-Test
 async def dtr_stack(tmp_path, ksim, rsim, line):
     s = await Stack().start(tmp_path, ksim, rsim, rcfg_extra={"cw": {"method": "dtr"}}, keyline=line)
