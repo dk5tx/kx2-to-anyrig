@@ -308,6 +308,8 @@ CW tune and ATU tune (hold 1 s – it transmits). Keys: T CW tune, N NR, B NB, M
 It always shows what the rig reports, not the last command. It is reachable only from the
 laptop itself.
 
+![Web UI](docs/images/webui.png)
+
 ### RX audio
 
 The shack streams the rig's USB sound card with Opus over RTP/UDP to the connected laptop.
