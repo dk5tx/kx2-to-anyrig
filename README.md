@@ -308,6 +308,8 @@ CW tune and ATU tune (hold 1 s – it transmits). Keys: T CW tune, N NR, B NB, M
 It always shows what the rig reports, not the last command. It is reachable only from the
 laptop itself.
 
+The layout adapts to the browser window: in a wide window the two panels (rig status and controls) sit side by side, below a width of about 760 pixels they are stacked one above the other – handy for a narrow window next to Win-Test.
+
 ![Web UI](docs/images/WebUI.png)
 
 ### RX audio
