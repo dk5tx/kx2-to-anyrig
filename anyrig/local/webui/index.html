@@ -24,7 +24,7 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(300px,1fr);gap:
 .tag.on{color:var(--text);border-color:var(--acc)}
 #txbadge{padding:4px 12px;border-radius:4px;font-weight:700;background:#26313a;color:var(--dim)}
 #txbadge.on{background:var(--tx);color:#fff}
-.meter{display:grid;grid-template-columns:52px 1fr 52px;gap:8px;align-items:center;margin:7px 0}
+.meter{display:grid;grid-template-columns:52px 1fr 64px;gap:8px;align-items:center;margin:7px 0}
 .track{height:14px;background:#0c0f12;border:1px solid var(--line);border-radius:3px;overflow:hidden}
 .fill{height:100%;width:0;background:var(--bar);transition:width .08s linear}
 .fill.hot{background:var(--warn)}.fill.bad{background:var(--bad)}
@@ -36,6 +36,7 @@ button.on{background:var(--acc);border-color:var(--acc);color:#04121f;font-weigh
 button.danger{border-color:#7a2b2b}button.danger.arm{background:var(--tx);color:#fff}
 input[type=range]{width:100%;accent-color:var(--acc)}
 .val{color:var(--dim);font-variant-numeric:tabular-nums;min-width:60px;text-align:right}
+.meter .val{text-align:left}   /* S9 -> S9+12 grows to the right, the start does not jump */
 h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 8px}
 kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;padding:0 4px;font-size:12px;color:var(--dim)}
 footer{padding:0 14px 12px;color:var(--dim);font-size:12px}
