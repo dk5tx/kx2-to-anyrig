@@ -180,6 +180,19 @@ function sval(raw30) {                    // S-meter points 0-30 -> S units (app
   return "S9+" + Math.round((raw30 - 15) * 60 / 15);
 }
 
+// TS-590SG meter scales, read off the rig's display (14 Nov 2026, docs/measurements.md):
+// PO: 10 W at segment 6, 25 W at 12, 50 W at 18; 100 W set (PC100) shows 28 segments.
+// ALC: the ALC zone (three marks) ends at segment 15. COMP: 1 dB per segment (10 dB at 10, 20 dB at 20).
+const PO_TABLE = [[0, 0], [6, 10], [12, 25], [18, 50], [28, 100], [30, 110]];
+function poval(x) {                      // PO meter 0..1 -> watts (approx.)
+  if (x == null) return "";
+  const n = x * 30;
+  for (let i = 1; i < PO_TABLE.length; i++) {
+    const [n0, w0] = PO_TABLE[i - 1], [n1, w1] = PO_TABLE[i];
+    if (n <= n1) return Math.round(w0 + (w1 - w0) * (n - n0) / (n1 - n0)) + " W";
+  }
+  return PO_TABLE[PO_TABLE.length - 1][1] + " W";
+}
 function swrval(x) {                     // SWR meter 0..1 -> SWR ratio
   // The TS-590SG bar is linear in the reflection coefficient: 30 segments = |G| 0..1.
   // Its scale fits: 1.5 at 6, 2 at 10, 3 at 15 segments, infinity at 30. SWR = (1+G)/(1-G).
@@ -227,10 +240,10 @@ function render() {
   $("b_cwtune").className = st.cw_tune ? "on" : "";
 
   $("slabel").textContent = tx ? "PO" : "S";
-  bar("s", tx ? m.po : m.s); $("v_s").textContent = tx ? Math.round((m.po || 0) * 100) + " %" : sval(m.s_raw);
+  bar("s", tx ? m.po : m.s); $("v_s").textContent = tx ? poval(m.po) : sval(m.s_raw);
   bar("swr", tx ? m.swr : 0, 0.33, 0.66); $("v_swr").textContent = tx ? swrval(m.swr) : "";
-  bar("alc", tx ? m.alc : 0, 0.6, 0.9); $("v_alc").textContent = tx && m.alc_raw != null ? m.alc_raw : "";
-  bar("comp", tx ? m.comp : 0); $("v_comp").textContent = tx && m.comp_raw != null ? m.comp_raw : "";
+  bar("alc", tx ? m.alc : 0, 0.51, 0.9); $("v_alc").textContent = tx && m.alc_raw != null ? m.alc_raw + "/30" : "";
+  bar("comp", tx ? m.comp : 0); $("v_comp").textContent = tx && m.comp_raw != null ? m.comp_raw + " dB" : "";
 
   document.querySelectorAll(".seg[data-key]").forEach(el => {
     const cur = String(st[el.dataset.key]);

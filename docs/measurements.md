@@ -94,6 +94,12 @@ DISP 09 (H: MENU), OFS/B 35 (H: CLR).
   |G| = RM1/30, so SWR = (1 + G) / (1 − G): 6 → 1.5, 10 → 2.0, 15 → 3.0. The web UI shows that value.
   Resolution near 1:1 is about 0.07 per segment; the rig's own SWR bridge reads low (reports of
   1.7:1 shown as about 1.2:1).
+- PO scale (top bar during TX): 10 W at about segment 6, 25 W at 12, 50 W at 18, the 100 W mark at about
+  26–27; with 100 W set (PC100) the rig shows 28 segments. The web UI interpolates
+  0/6/12/18/28 segments → 0/10/25/50/100 W.
+- ALC: the ALC zone (three marks above the bar) ends at about segment 15 (half scale). The web UI shows
+  `n/30`, yellow above 15.
+- COMP: 1 dB per segment (10 dB at segment 10, 20 dB at 20); shown as dB.
 
 ### TX
 - `TX0;` / `RX;` immediately, plus XI.
