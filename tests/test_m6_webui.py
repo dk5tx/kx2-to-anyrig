@@ -58,6 +58,8 @@ def test_webui_shows_rig_state_and_sends_allowed_commands(tmp_path):
             assert (await http(ui.port, "POST", "/api/set", {"k": "power", "v": 200}))[0] == 200
             assert await wait_for(lambda: rsim.raw["PC"] == "100", 1.0)      # remote limit
             assert (await http(ui.port, "POST", "/api/raw", {"d": "CA1;"}))[0] == 200
+            assert (await http(ui.port, "POST", "/api/raw", {"d": "AC000;"}))[0] == 200   # tuner through
+            assert (await http(ui.port, "POST", "/api/raw", {"d": "AC110;"}))[0] == 200   # tuner in
             assert await wait_for(lambda: "CA1" in rsim.received, 1.0)
             # never: TX commands, unknown keys
             assert (await http(ui.port, "POST", "/api/raw", {"d": "TX;"}))[0] == 400

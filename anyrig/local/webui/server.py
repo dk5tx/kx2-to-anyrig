@@ -28,8 +28,9 @@ UI_KEYS = {
     "power", "nr", "nr_level", "nb", "notch", "notch_freq", "beat_cancel", "agc", "break_in_delay",
     "rf_gain", "att", "preamp", "keyer_wpm", "vox",
 }
-# raw commands the UI buttons may send (ATU tune transmits – only from its own button)
-RAW_ALLOWED = re.compile(r"^(AC111|AC110|CA1|CA0|RC|AN[129][019][019]);$")
+# raw commands the UI buttons may send (ATU tune AC111 transmits – only from its own button;
+# AC110 / AC000 = tuner in / through, no transmission)
+RAW_ALLOWED = re.compile(r"^(AC111|AC110|AC000|CA1|CA0|RC|AN[129][019][019]);$")
 
 
 class WebUI:
