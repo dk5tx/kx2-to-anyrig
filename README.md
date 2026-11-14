@@ -304,9 +304,15 @@ directly connected), `--remote host[:port]`, `--kx2-port`, `--no-audio`, `--debu
 http://127.0.0.1:8073/ shows frequency, mode, filter, RIT/XIT, TX, meters (S/PO, SWR, ALC,
 COMP), link round trip time, audio level and KX2 warnings, and has controls for power, AGC,
 NR (+level), NB, notch (+frequency), beat cancel, ATT/PRE, break-in delay, RF gain, antenna,
-CW tune and ATU tune (hold 1 s – it transmits). Keys: T CW tune, N NR, B NB, M notch, A AGC.
+CW tune, tuner in/out (ATU, does not transmit) and ATU tune (hold 1 s – it transmits). Keys: T CW tune, N NR, B NB, M notch, A AGC.
 It always shows what the rig reports, not the last command. It is reachable only from the
 laptop itself.
+
+Meter bars follow the rig live (PO like a PEP meter). The numbers next to them hold the peak
+for about a second and refresh a few times a second, so they can be read; SWR refreshes once
+a second and stays steady between CW elements. The TS-590SG only reports meter segments
+(0–30); the web UI converts them using the rig's own scales (SWR ratio, PO in watts,
+COMP in dB, ALC as `n/30` with the ALC zone up to 15) – see docs/measurements.md.
 
 The layout adapts to the browser window: in a wide window the two panels (rig status and controls) sit side by side, below a width of about 760 pixels they are stacked one above the other – handy for a narrow window next to Win-Test.
 

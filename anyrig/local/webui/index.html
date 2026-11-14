@@ -101,6 +101,7 @@ footer{padding:0 14px 12px;color:var(--dim);font-size:12px}
       <button id="b_ant1">ANT 1</button><button id="b_ant2">ANT 2</button><button id="b_rxant">RX ANT</button></div></div>
     <div class="ctl"><span>Tune</span><div class="seg">
       <button id="b_cwtune">CW tune <kbd>T</kbd></button>
+      <button id="b_atuon" title="Antenna tuner in/out (does not transmit)">ATU</button>
       <button id="b_atu" class="danger" title="Transmits! Hold for 1 s">ATU tune (hold 1 s)</button></div></div>
   </section>
 </main>
@@ -155,6 +156,8 @@ $("b_ant1").onclick = () => raw("AN199;");
 $("b_ant2").onclick = () => raw("AN299;");
 $("b_rxant").onclick = () => raw(String(S.state.antenna || "").charAt(1) === "1" ? "AN909;" : "AN919;");
 $("b_cwtune").onclick = () => raw("CA1;");
+// tuner in/out: AC110 = in (RX and TX), AC000 = through; no transmission
+$("b_atuon").onclick = () => raw(S.state.atu_on ? "AC000;" : "AC110;");
 // ATU tune transmits: only when the button is held for 1 s
 (function () {
   const b = $("b_atu"); let t = 0;
@@ -202,6 +205,46 @@ function swrval(x) {                     // SWR meter 0..1 -> SWR ratio
   return swr < 10 ? swr.toFixed(1) : String(Math.round(swr));
 }
 
+// Meter smoothing. The rig sends meters up to ~20 times a second; that is fine for the bars,
+// but numbers that fast cannot be read. Numbers show a peak hold and refresh a few times a second.
+//   S:   bar live; number holds the peak 0.8 s, then falls back
+//   PO:  bar like a PEP meter (peak held 0.5 s); number holds 1 s, refresh 3x/s
+//   SWR: bar and number hold the peak 1.5 s and refresh once a second (steady, also between CW elements)
+//   ALC, COMP: bar live; number holds 1 s, refresh 3x/s
+const MH = {}; let meterTx = null;
+function held(key, v, holdMs, releasePerS) {   // peak hold with release, values 0..1
+  const now = performance.now(); v = v || 0;
+  let h = MH[key]; if (!h) h = MH[key] = {v: v, t: now, last: now};
+  const dt = (now - h.last) / 1000; h.last = now;
+  if (v >= h.v) { h.v = v; h.t = now; }
+  else if (now - h.t > holdMs) h.v = Math.max(v, h.v - releasePerS * dt);
+  return h.v;
+}
+function every(key, ms, fn) {                 // run fn at most every ms milliseconds
+  const now = performance.now(), e = MH["@" + key] || (MH["@" + key] = {t: -1e9});
+  if (now - e.t >= ms) { e.t = now; fn(); }
+}
+function meters(m, tx) {
+  if (tx !== meterTx) { for (const k in MH) delete MH[k]; meterTx = tx; }   // fresh start at RX/TX change
+  $("slabel").textContent = tx ? "PO" : "S";
+  if (!tx) {
+    bar("s", m.s);
+    const s = held("s", m.s, 800, 0.4);
+    every("s", 250, () => { $("v_s").textContent = m.s == null ? "" : sval(Math.round(s * 30)); });
+    bar("swr", 0); bar("alc", 0); bar("comp", 0);
+    $("v_swr").textContent = $("v_alc").textContent = $("v_comp").textContent = "";
+    return;
+  }
+  bar("s", held("po_bar", m.po, 500, 1.0));
+  const po = held("po", m.po, 1000, 0.5), swr = held("swr", m.swr, 1500, 0.3);
+  const alc = held("alc", m.alc, 1000, 0.5), comp = held("comp", m.comp, 1000, 0.5);
+  bar("alc", m.alc, 0.51, 0.9); bar("comp", m.comp);
+  every("po", 330, () => { $("v_s").textContent = m.po == null ? "" : poval(po); });
+  every("swr", 1000, () => { bar("swr", swr, 0.33, 0.66); $("v_swr").textContent = m.swr == null ? "" : swrval(swr); });
+  every("alc", 330, () => { $("v_alc").textContent = m.alc == null ? "" : Math.round(alc * 30) + "/30"; });
+  every("comp", 330, () => { $("v_comp").textContent = m.comp == null ? "" : Math.round(comp * 30) + " dB"; });
+}
+
 function render() {
   const st = S.state, m = S.meters || {}, tx = !!st.tx;
   $("linkdot").className = "dot" + (S.link && S.link.connected ? " ok" : "");
@@ -238,12 +281,9 @@ function render() {
   $("b_rxant").className = an.charAt(1) === "1" ? "on" : "";
   $("b_att").className = st.att ? "on" : ""; $("b_pre").className = st.preamp ? "on" : "";
   $("b_cwtune").className = st.cw_tune ? "on" : "";
+  $("b_atuon").className = st.atu_on ? "on" : "";
 
-  $("slabel").textContent = tx ? "PO" : "S";
-  bar("s", tx ? m.po : m.s); $("v_s").textContent = tx ? poval(m.po) : sval(m.s_raw);
-  bar("swr", tx ? m.swr : 0, 0.33, 0.66); $("v_swr").textContent = tx ? swrval(m.swr) : "";
-  bar("alc", tx ? m.alc : 0, 0.51, 0.9); $("v_alc").textContent = tx && m.alc_raw != null ? m.alc_raw + "/30" : "";
-  bar("comp", tx ? m.comp : 0); $("v_comp").textContent = tx && m.comp_raw != null ? m.comp_raw + " dB" : "";
+  meters(m, tx);
 
   document.querySelectorAll(".seg[data-key]").forEach(el => {
     const cur = String(st[el.dataset.key]);
@@ -264,6 +304,7 @@ function connect() {
   es.onerror = () => { es.close(); S.link = {connected: false}; render(); setTimeout(connect, 1000); };
 }
 connect();
+setInterval(() => { if (S.link) render(); }, 100);   // lets held meter values fall back even without new data
 </script>
 </body>
 </html>
