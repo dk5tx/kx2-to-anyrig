@@ -308,7 +308,8 @@ CW tune, tuner in/out (ATU, does not transmit) and ATU tune (hold 1 s – it tra
 It always shows what the rig reports, not the last command. It is reachable only from the
 laptop itself.
 
-Meter bars follow the rig live (PO like a PEP meter). The numbers next to them hold the peak
+S and PO have separate bars (the rig reports one of them at a time, the other row is dimmed); all
+bars carry the scale marks of the TS-590SG display. Meter bars follow the rig live (PO like a PEP meter). The numbers next to them hold the peak
 for about a second and refresh a few times a second, so they can be read; SWR refreshes once
 a second and stays steady between CW elements. The TS-590SG only reports meter segments
 (0–30); the web UI converts them using the rig's own scales (SWR ratio, PO in watts,

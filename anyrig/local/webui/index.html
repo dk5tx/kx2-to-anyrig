@@ -24,7 +24,14 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(300px,1fr);gap:
 .tag.on{color:var(--text);border-color:var(--acc)}
 #txbadge{padding:4px 12px;border-radius:4px;font-weight:700;background:#26313a;color:var(--dim)}
 #txbadge.on{background:var(--tx);color:#fff}
-.meter{display:grid;grid-template-columns:52px 1fr 64px;gap:8px;align-items:center;margin:7px 0}
+.meter{display:grid;grid-template-columns:52px 1fr 64px;gap:8px;align-items:start;margin:6px 0;transition:opacity .2s}
+.meter>span{line-height:16px}
+.meter.idle{opacity:.45}
+.scale{position:relative;height:14px;font-size:10px;color:var(--dim)}
+.scale i{position:absolute;top:0;width:1px;height:4px;background:var(--dim)}
+.scale b{position:absolute;top:3px;font-weight:400;white-space:nowrap;transform:translateX(-50%)}
+.scale b.l{transform:none}.scale b.r{transform:translateX(-100%)}
+#trk_alc{background:linear-gradient(to right,#16283a 0 50%,#0c0f12 50%)}   /* ALC zone: segments 0-15 */
 .track{height:14px;background:#0c0f12;border:1px solid var(--line);border-radius:3px;overflow:hidden}
 .fill{height:100%;width:0;background:var(--bar);transition:width .08s linear}
 .fill.hot{background:var(--warn)}.fill.bad{background:var(--bad)}
@@ -72,10 +79,11 @@ footer{padding:0 14px 12px;color:var(--dim);font-size:12px}
       <span class="tag" id="ant">ANT –</span><span class="tag" id="wpm">– WPM</span>
     </div>
     <h2 style="margin-top:14px">Meters</h2>
-    <div class="meter"><span id="slabel">S</span><div class="track"><div class="fill" id="m_s"></div></div><span class="val" id="v_s"></span></div>
-    <div class="meter"><span>SWR</span><div class="track"><div class="fill" id="m_swr"></div></div><span class="val" id="v_swr"></span></div>
-    <div class="meter"><span>ALC</span><div class="track"><div class="fill" id="m_alc"></div></div><span class="val" id="v_alc"></span></div>
-    <div class="meter"><span>COMP</span><div class="track"><div class="fill" id="m_comp"></div></div><span class="val" id="v_comp"></span></div>
+    <div class="meter" id="row_s"><span>S</span><div><div class="track"><div class="fill" id="m_s"></div></div><div class="scale" id="sc_s"></div></div><span class="val" id="v_s"></span></div>
+    <div class="meter" id="row_po"><span>PO</span><div><div class="track"><div class="fill" id="m_po"></div></div><div class="scale" id="sc_po"></div></div><span class="val" id="v_po"></span></div>
+    <div class="meter" id="row_swr"><span>SWR</span><div><div class="track"><div class="fill" id="m_swr"></div></div><div class="scale" id="sc_swr"></div></div><span class="val" id="v_swr"></span></div>
+    <div class="meter" id="row_alc"><span>ALC</span><div><div class="track" id="trk_alc"><div class="fill" id="m_alc"></div></div><div class="scale" id="sc_alc"></div></div><span class="val" id="v_alc"></span></div>
+    <div class="meter" id="row_comp"><span>COMP</span><div><div class="track"><div class="fill" id="m_comp"></div></div><div class="scale" id="sc_comp"></div></div><span class="val" id="v_comp"></span></div>
   </section>
 
   <section class="panel">
@@ -212,6 +220,20 @@ function swrval(x) {                     // SWR meter 0..1 -> SWR ratio
 //   SWR: bar and number hold the peak 1.5 s; a rise shows at once, a fall at most once a second
 //   ALC, COMP: bar live; number holds 1 s, refresh 3x/s
 const MH = {}; let meterTx = null;
+// scale marks as on the TS-590SG display: [segment 0..30, label, tick (default true)]
+const SCALES = {
+  s:    [[15 / 9, "1"], [5, "3"], [25 / 3, "5"], [35 / 3, "7"], [15, "9"], [20, "+20"], [25, "+40"], [30, "+60"]],
+  po:   [[6, "10"], [12, "25"], [18, "50"], [28, "100 W"]],
+  swr:  [[6, "1.5"], [10, "2"], [15, "3"], [30, "\u221e"]],
+  alc:  [[7.5, "ALC zone", false], [15, ""]],
+  comp: [[10, "10"], [20, "20 dB"]],
+};
+for (const [id, marks] of Object.entries(SCALES)) {
+  $("sc_" + id).innerHTML = marks.map(([n, label, tick]) => {
+    const x = n / 30 * 100, cls = x >= 96 ? "r" : x <= 4 ? "l" : "";
+    return (tick === false ? "" : `<i style="left:${x}%"></i>`) + (label ? `<b class="${cls}" style="left:${x}%">${label}</b>` : "");
+  }).join("");
+}
 function held(key, v, holdMs, releasePerS) {   // peak hold with release, values 0..1
   const now = performance.now(); v = v || 0;
   let h = MH[key]; if (!h) h = MH[key] = {v: v, t: now, last: now};
@@ -225,21 +247,28 @@ function every(key, ms, fn) {                 // run fn at most every ms millise
   if (now - e.t >= ms) { e.t = now; fn(); }
 }
 function meters(m, tx) {
-  if (tx !== meterTx) { for (const k in MH) delete MH[k]; meterTx = tx; }   // fresh start at RX/TX change
-  $("slabel").textContent = tx ? "PO" : "S";
+  if (tx !== meterTx) {                       // fresh start at RX/TX change; the PO bar may fall back after TX
+    for (const k in MH) if (tx || k !== "po_bar") delete MH[k];
+    meterTx = tx;
+  }
+  // the rig sends either the S meter (RX) or PO (TX); the unused rows are dimmed
+  $("row_s").className = "meter" + (tx ? " idle" : "");
+  ["po", "swr", "alc", "comp"].forEach(id => { $("row_" + id).className = "meter" + (tx ? "" : " idle"); });
   if (!tx) {
     bar("s", m.s);
     const s = held("s", m.s, 800, 0.4);
     every("s", 250, () => { $("v_s").textContent = m.s == null ? "" : sval(Math.round(s * 30)); });
+    bar("po", held("po_bar", 0, 500, 1.0));
     bar("swr", 0); bar("alc", 0); bar("comp", 0);
-    $("v_swr").textContent = $("v_alc").textContent = $("v_comp").textContent = "";
+    $("v_po").textContent = $("v_swr").textContent = $("v_alc").textContent = $("v_comp").textContent = "";
     return;
   }
-  bar("s", held("po_bar", m.po, 500, 1.0));
+  bar("s", 0); $("v_s").textContent = "";
+  bar("po", held("po_bar", m.po, 500, 1.0));
   const po = held("po", m.po, 1000, 0.5), swr = held("swr", m.swr, 1500, 0.3);
   const alc = held("alc", m.alc, 1000, 0.5), comp = held("comp", m.comp, 1000, 0.5);
   bar("alc", m.alc, 0.51, 0.9); bar("comp", m.comp);
-  every("po", 330, () => { $("v_s").textContent = m.po == null ? "" : poval(po); });
+  every("po", 330, () => { $("v_po").textContent = m.po == null ? "" : poval(po); });
   // SWR: a rising value shows at once (also the first value after TX starts), falling only once a second
   const showSwr = () => { MH.swrShown = swr; bar("swr", swr, 0.33, 0.66); $("v_swr").textContent = m.swr == null ? "" : swrval(swr); };
   if (m.swr != null && (MH.swrShown == null || swr > MH.swrShown)) { MH["@swr"] = {t: performance.now()}; showSwr(); }
